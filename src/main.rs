@@ -8,7 +8,7 @@ use macroquad::prelude::*;
 use arena::Arena;
 use bullet::{Bullet, BULLET_RADIUS};
 use enemy::Enemies;
-use ship::{Ship, SHIP_RADIUS};
+use ship::{Ship, ShipInput, SHIP_RADIUS};
 
 /// 更新は固定の刻みで回し、画面のリフレッシュレートで手触りが変わらないようにする。
 const FIXED_DT: f32 = 1.0 / 120.0;
@@ -48,12 +48,15 @@ async fn main() {
     let mut accumulator = 0.0;
     // クリックは描画フレームで受け、次に回る固定刻みの更新で 1 回だけ使う。
     let mut fire_requested = false;
+    let mut boost_requested = false;
 
     loop {
         // カメラは機体を常に画面中央に置く。操縦の目標は前のフレームの位置で作ったカメラで変換する。
         let camera = view_camera(ship.position);
         let aim = camera.screen_to_world(mouse_position().into());
         fire_requested |= is_mouse_button_pressed(MouseButton::Left);
+        let mut input = read_input();
+        boost_requested |= input.boost;
 
         let frame_time = get_frame_time().min(MAX_FRAME_TIME);
         if let Some(since) = game_over.as_mut() {
@@ -67,11 +70,14 @@ async fn main() {
                 game_over = None;
             }
             fire_requested = false;
+            boost_requested = false;
         } else {
             accumulator += frame_time;
         }
         while game_over.is_none() && accumulator >= FIXED_DT {
-            ship.update(aim, &arena, FIXED_DT);
+            input.boost = boost_requested;
+            ship.update(aim, input, &arena, FIXED_DT);
+            boost_requested = false;
             if let Some(recovery) = bullet.update(fire_requested, &ship, &arena, FIXED_DT) {
                 last_recovery = Some(recovery);
             }
@@ -101,13 +107,7 @@ async fn main() {
         bullet.draw_offscreen_marker(view_rect(ship.position));
 
         set_default_camera();
-        draw_text(
-            format!("speed {:.0}", ship.velocity.length()),
-            16.0,
-            32.0,
-            24.0,
-            Color::from_rgba(180, 190, 205, 255),
-        );
+        draw_hud(&ship);
         let bounces = match &bullet {
             Bullet::Flying(b) => format!("bounces {} / kills {}", b.bounces, b.kills),
             Bullet::Held => match &last_recovery {
@@ -121,14 +121,14 @@ async fn main() {
         draw_text(
             bounces,
             16.0,
-            60.0,
+            132.0,
             24.0,
             Color::from_rgba(180, 190, 205, 255),
         );
         draw_text(
             format!("time {survived:.1}"),
             16.0,
-            88.0,
+            160.0,
             24.0,
             Color::from_rgba(180, 190, 205, 255),
         );
@@ -162,6 +162,74 @@ async fn main() {
 
         next_frame().await
     }
+}
+
+/// Shift（左右どちらでも）を押しているあいだドリフト。Space を押した瞬間にブースト。
+/// どちらも JIS / US で位置が変わらない。`is_key_pressed` はキーリピートを含まないので、
+/// Space を押し続けてもブーストは一度だけしか始まらない。
+/// Space はクリックと同じく、次に回る固定刻みの更新まで持ち越す。
+fn read_input() -> ShipInput {
+    ShipInput {
+        drift: is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift),
+        boost: is_key_pressed(KeyCode::Space),
+    }
+}
+
+fn draw_hud(ship: &Ship) {
+    let text = Color::from_rgba(180, 190, 205, 255);
+    draw_text(
+        format!("speed {:.0}", ship.velocity.length()),
+        16.0,
+        32.0,
+        24.0,
+        text,
+    );
+
+    if ship.drifting {
+        draw_text(
+            "drift",
+            16.0,
+            58.0,
+            24.0,
+            Color::from_rgba(120, 210, 255, 255),
+        );
+    }
+
+    let (label, color) = if ship.is_boosting() {
+        (
+            format!("boost {:.1}", ship.boost_remaining),
+            Color::from_rgba(255, 196, 90, 255),
+        )
+    } else if ship.boost_cooldown > 0.0 {
+        (
+            format!("boost {:.1}", ship.boost_cooldown),
+            Color::from_rgba(140, 155, 175, 255),
+        )
+    } else {
+        ("boost".to_owned(), Color::from_rgba(140, 220, 160, 255))
+    };
+    draw_text(&label, 16.0, 86.0, 22.0, color);
+
+    let bar_x = 16.0;
+    let bar_y = 96.0;
+    let bar_w = 160.0;
+    let bar_h = 8.0;
+    draw_rectangle(
+        bar_x,
+        bar_y,
+        bar_w,
+        bar_h,
+        Color::from_rgba(36, 42, 56, 255),
+    );
+    draw_rectangle(bar_x, bar_y, bar_w * ship.boost_charge(), bar_h, color);
+
+    draw_text(
+        "Click fire    Shift drift    Space boost",
+        16.0,
+        screen_height() - 16.0,
+        22.0,
+        Color::from_rgba(150, 160, 175, 200),
+    );
 }
 
 /// 毎回違う敵の出方にするため、起動時刻から種を作る。
