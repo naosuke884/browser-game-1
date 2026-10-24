@@ -51,12 +51,17 @@ impl Bullet {
             Bullet::Flying(bullet) => {
                 bullet.position += bullet.velocity * dt;
 
-                // 減速せず、壁で反射し続ける。
+                // 減速せず、壁に当たるたびにその時点の機体の位置へ向かって飛び直す。
                 if let Some(hit) = arena.push_inside(bullet.position, BULLET_RADIUS) {
                     bullet.position = hit.position;
                     let into_wall = bullet.velocity.dot(hit.normal);
                     if into_wall < 0.0 {
-                        bullet.velocity -= hit.normal * into_wall * 2.0;
+                        let to_ship = (ship.position - bullet.position).normalize_or_zero();
+                        bullet.velocity = if to_ship == Vec2::ZERO {
+                            bullet.velocity - hit.normal * into_wall * 2.0
+                        } else {
+                            to_ship * BULLET_SPEED
+                        };
                         bullet.bounces += 1;
                     }
                 }
@@ -166,18 +171,26 @@ mod tests {
     }
 
     #[test]
-    fn bounces_off_wall_without_slowing() {
+    fn bounces_toward_ship_without_slowing() {
         let arena = Arena::new(400.0, 2000.0);
         let ship = ship_at(Vec2::ZERO);
         let mut bullet = Bullet::Held;
         bullet.update(true, &ship, &arena, DT);
-        // 右の壁まで 200 弱。0.4 秒あれば跳ね返って左へ向かう。
-        for _ in 0..48 {
-            bullet.update(false, &ship_at(vec2(0.0, 900.0)), &arena, DT);
+        // 右の壁まで 200 弱。0.2 秒あれば壁に当たる。そのときの機体は左下にいる。
+        let moved = ship_at(vec2(-150.0, 300.0));
+        let mut hit_at = None;
+        for _ in 0..30 {
+            bullet.update(false, &moved, &arena, DT);
+            let b = flying(&bullet);
+            if b.bounces == 1 && hit_at.is_none() {
+                hit_at = Some(b.position);
+            }
         }
         let b = flying(&bullet);
         assert_eq!(b.bounces, 1);
-        assert_eq!(b.velocity, vec2(-BULLET_SPEED, 0.0));
+        assert!((b.velocity.length() - BULLET_SPEED).abs() < 1e-2);
+        let expected = (moved.position - hit_at.unwrap()).normalize();
+        assert!(b.velocity.normalize().distance(expected) < 1e-4);
     }
 
     #[test]
