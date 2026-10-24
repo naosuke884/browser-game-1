@@ -6,6 +6,7 @@ mod player;
 use macroquad::prelude::*;
 
 use game::{Game, VIEW_HEIGHT};
+use player::WireInput;
 
 /// 更新は固定の刻みで回し、画面のリフレッシュレートで手触りが変わらないようにする。
 const FIXED_DT: f32 = 1.0 / 120.0;
@@ -34,9 +35,15 @@ async fn main() {
     let mut accumulator = 0.0;
     // ゲームオーバーになってからの経過時間。
     let mut since_over = 0.0;
+    // クリックは描画フレームで受け、次に回る固定刻みの更新で 1 回だけ使う。
+    let mut wire_pressed = false;
 
     loop {
         let frame_time = get_frame_time().min(MAX_FRAME_TIME);
+        let camera = Camera2D::from_display_rect(view_rect(game.camera_x));
+        let aim = camera.screen_to_world(mouse_position().into());
+        let held = is_mouse_button_down(MouseButton::Left);
+        wire_pressed |= is_mouse_button_pressed(MouseButton::Left);
         if game.over {
             since_over += frame_time;
             if since_over >= RETRY_DELAY && is_mouse_button_pressed(MouseButton::Left) {
@@ -44,10 +51,17 @@ async fn main() {
                 accumulator = 0.0;
                 since_over = 0.0;
             }
+            wire_pressed = false;
         } else {
             accumulator += frame_time;
             while accumulator >= FIXED_DT && !game.over {
-                game.step(FIXED_DT);
+                let input = WireInput {
+                    aim,
+                    pressed: wire_pressed,
+                    held,
+                };
+                game.step(input, FIXED_DT);
+                wire_pressed = false;
                 accumulator -= FIXED_DT;
             }
         }
@@ -64,6 +78,13 @@ async fn main() {
             32.0,
             28.0,
             Color::from_rgba(180, 190, 205, 255),
+        );
+        draw_text(
+            "hold left click: wire",
+            16.0,
+            screen_height() - 16.0,
+            22.0,
+            Color::from_rgba(150, 160, 175, 200),
         );
         if game.over {
             draw_game_over(&game, since_over);

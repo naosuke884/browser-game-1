@@ -4,10 +4,44 @@ use crate::level::Level;
 
 pub const PLAYER_RADIUS: f32 = 14.0;
 const GRAVITY: f32 = 1600.0;
+/// 速さの上限。巻き取りで勢いが際限なく増え、操作が追いつかなくなるのを防ぐ。
+const MAX_SPEED: f32 = 900.0;
+/// ワイヤーが届く最大の長さ。地形の刺し先どうしの間隔（350 以下）より十分長くする。
+pub const MAX_WIRE_LENGTH: f32 = 600.0;
+/// これより短いワイヤーにはしない。支点の真下で振り子が暴れないようにする。
+const MIN_WIRE_LENGTH: f32 = 40.0;
+/// 押している間、ワイヤーを自動で巻き取る速さ。
+/// 振り子だけでは掴み直すたびに低くなっていくので、巻き取りで高さと勢いを取り戻せるようにする。
+const REEL_SPEED: f32 = 100.0;
+/// 巻き取りはこの長さで止める。短すぎると支点の真下で回るだけになり、前へ進めない。
+const REEL_MIN_LENGTH: f32 = 140.0;
+/// 刺さらなかったワイヤーを描いておく時間。
+const MISS_SHOW_TIME: f32 = 0.12;
+
+/// ワイヤーの操作。
+#[derive(Clone, Copy, Default)]
+pub struct WireInput {
+    /// カーソルのワールド座標。
+    pub aim: Vec2,
+    /// 左クリックを押した瞬間。次に回る更新で 1 回だけ真になる。
+    pub pressed: bool,
+    /// 左クリックを押している間は真。
+    pub held: bool,
+}
+
+/// 刺さっているワイヤー。
+#[derive(Clone, Copy, Debug)]
+pub struct Anchor {
+    pub point: Vec2,
+    pub length: f32,
+}
 
 pub struct Player {
     pub position: Vec2,
     pub velocity: Vec2,
+    pub anchor: Option<Anchor>,
+    /// 刺さらなかったワイヤーの先端と、表示の残り時間。
+    miss: Option<(Vec2, f32)>,
 }
 
 impl Player {
@@ -15,12 +49,46 @@ impl Player {
         Self {
             position,
             velocity: Vec2::ZERO,
+            anchor: None,
+            miss: None,
         }
     }
 
-    pub fn update(&mut self, level: &Level, dt: f32) {
+    pub fn update(&mut self, input: WireInput, level: &Level, dt: f32) {
+        if !input.held {
+            // 離すとワイヤーが外れ、そのときの速さと向きのまま飛ぶ。
+            self.anchor = None;
+        } else if input.pressed && self.anchor.is_none() {
+            self.shoot_wire(input.aim, level);
+        }
+        if let Some((_, left)) = &mut self.miss {
+            *left -= dt;
+            if *left <= 0.0 {
+                self.miss = None;
+            }
+        }
+
         self.velocity.y += GRAVITY * dt;
+        self.velocity = self.velocity.clamp_length_max(MAX_SPEED);
         self.position += self.velocity * dt;
+
+        // ワイヤーは縄として扱い、伸び切ったときだけ引き戻す（たるむことはできる）。
+        if let Some(anchor) = &mut self.anchor {
+            if anchor.length > REEL_MIN_LENGTH {
+                anchor.length = (anchor.length - REEL_SPEED * dt).max(REEL_MIN_LENGTH);
+            }
+            let anchor = *anchor;
+            let from_anchor = self.position - anchor.point;
+            let distance = from_anchor.length();
+            if distance > anchor.length {
+                let outward = from_anchor / distance;
+                self.position = anchor.point + outward * anchor.length;
+                let away = self.velocity.dot(outward);
+                if away > 0.0 {
+                    self.velocity -= outward * away;
+                }
+            }
+        }
 
         // 地形に当たっても死なず、めり込む向きの速度だけ消して滑らせる。
         if let Some(contact) = level.push_out(self.position, PLAYER_RADIUS) {
@@ -32,7 +100,58 @@ impl Player {
         }
     }
 
+    fn shoot_wire(&mut self, aim: Vec2, level: &Level) {
+        let dir = (aim - self.position).normalize_or_zero();
+        if dir == Vec2::ZERO {
+            return;
+        }
+        match level.raycast(self.position, dir, MAX_WIRE_LENGTH) {
+            Some(point) => {
+                self.anchor = Some(Anchor {
+                    point,
+                    length: point.distance(self.position).max(MIN_WIRE_LENGTH),
+                });
+                self.miss = None;
+            }
+            None => {
+                self.miss = Some((self.position + dir * MAX_WIRE_LENGTH, MISS_SHOW_TIME));
+            }
+        }
+    }
+
+    /// 今クリックしたらワイヤーが刺さる点。照準の表示に使う。
+    pub fn wire_target(&self, aim: Vec2, level: &Level) -> Option<Vec2> {
+        let dir = (aim - self.position).normalize_or_zero();
+        level.raycast(self.position, dir, MAX_WIRE_LENGTH)
+    }
+
     pub fn draw(&self) {
+        let wire_color = Color::from_rgba(255, 200, 80, 255);
+        if let Some(anchor) = self.anchor {
+            draw_line(
+                self.position.x,
+                self.position.y,
+                anchor.point.x,
+                anchor.point.y,
+                2.0,
+                wire_color,
+            );
+            draw_circle(anchor.point.x, anchor.point.y, 4.0, wire_color);
+        }
+        if let Some((tip, left)) = self.miss {
+            let alpha = (left / MISS_SHOW_TIME).clamp(0.0, 1.0) * 0.6;
+            draw_line(
+                self.position.x,
+                self.position.y,
+                tip.x,
+                tip.y,
+                1.0,
+                Color {
+                    a: alpha,
+                    ..wire_color
+                },
+            );
+        }
         draw_circle(
             self.position.x,
             self.position.y,
@@ -46,25 +165,105 @@ impl Player {
 mod tests {
     use super::*;
 
+    const DT: f32 = 1.0 / 120.0;
+
+    /// 下端が y = 0 の天井。
+    fn ceiling() -> Level {
+        let mut level = Level::default();
+        level.add(Rect::new(-10_000.0, -100.0, 20_000.0, 100.0));
+        level
+    }
+
+    fn press(aim: Vec2) -> WireInput {
+        WireInput {
+            aim,
+            pressed: true,
+            held: true,
+        }
+    }
+
+    fn hold(aim: Vec2) -> WireInput {
+        WireInput {
+            aim,
+            pressed: false,
+            held: true,
+        }
+    }
+
     #[test]
     fn falls_under_gravity() {
         let mut player = Player::new(Vec2::ZERO);
-        for _ in 0..120 {
-            player.update(&Level::default(), 1.0 / 120.0);
+        for _ in 0..60 {
+            player.update(WireInput::default(), &Level::default(), DT);
         }
-        assert!((player.velocity.y - GRAVITY).abs() < 1e-2);
+        assert!((player.velocity.y - GRAVITY * 0.5).abs() < 1e-2);
+        // さらに落ち続けても上限で止まる。
+        for _ in 0..240 {
+            player.update(WireInput::default(), &Level::default(), DT);
+        }
+        assert!((player.velocity.length() - MAX_SPEED).abs() < 1e-2);
         assert!(player.position.y > 0.0);
     }
 
     #[test]
     fn slides_along_ceiling() {
-        let mut level = Level::default();
-        level.add(Rect::new(-1000.0, -100.0, 2000.0, 100.0)); // 下端は y = 0
+        let level = ceiling();
         let mut player = Player::new(vec2(0.0, PLAYER_RADIUS + 1.0));
         player.velocity = vec2(300.0, -500.0);
-        player.update(&level, 1.0 / 120.0);
+        player.update(WireInput::default(), &level, DT);
         assert_eq!(player.position.y, PLAYER_RADIUS);
         assert!(player.velocity.y >= 0.0);
         assert_eq!(player.velocity.x, 300.0);
+    }
+
+    #[test]
+    fn wire_attaches_to_ceiling_in_range() {
+        let level = ceiling();
+        let mut player = Player::new(vec2(0.0, 400.0));
+        player.update(press(vec2(0.0, -1.0)), &level, DT);
+        let anchor = player.anchor.unwrap();
+        assert_eq!(anchor.point, vec2(0.0, 0.0));
+        // 刺さった更新の中で 1 刻み分だけ巻き取られている。
+        assert_eq!(anchor.length, 400.0 - REEL_SPEED * DT);
+    }
+
+    #[test]
+    fn wire_misses_out_of_range() {
+        let level = ceiling();
+        let mut player = Player::new(vec2(0.0, MAX_WIRE_LENGTH + 50.0));
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
+        assert!(player.anchor.is_none());
+        // 押し続けても、もう一度押すまで撃ち直さない。
+        player.position.y = 300.0;
+        player.update(hold(vec2(0.0, 0.0)), &level, DT);
+        assert!(player.anchor.is_none());
+    }
+
+    #[test]
+    fn swinging_keeps_wire_length_and_moves_sideways() {
+        let level = ceiling();
+        // 支点の左下から振り出す。
+        let mut player = Player::new(vec2(-300.0, 300.0));
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
+        let anchor = player.anchor.unwrap();
+        for _ in 0..60 {
+            player.update(hold(vec2(0.0, 0.0)), &level, DT);
+            assert!(player.position.distance(anchor.point) <= anchor.length + 1e-3);
+        }
+        assert!(player.velocity.x > 0.0);
+    }
+
+    #[test]
+    fn releasing_keeps_velocity() {
+        let level = ceiling();
+        let mut player = Player::new(vec2(-300.0, 300.0));
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
+        for _ in 0..30 {
+            player.update(hold(vec2(0.0, 0.0)), &level, DT);
+        }
+        let before = player.velocity;
+        player.update(WireInput::default(), &level, DT);
+        assert!(player.anchor.is_none());
+        assert_eq!(player.velocity, before + vec2(0.0, GRAVITY * DT));
     }
 }
