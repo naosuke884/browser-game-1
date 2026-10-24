@@ -48,7 +48,7 @@ impl Game {
 
     pub fn with_seed(seed: u64) -> Self {
         let mut level = Level::default();
-        let mut generator = Generator::new(-DISCARD_BEHIND);
+        let mut generator = Generator::new(-DISCARD_BEHIND, seed);
         generator.fill(&mut level, GENERATE_AHEAD);
         let start = START_OFFSET;
         Self {
@@ -214,17 +214,41 @@ mod tests {
         assert!(game.over);
     }
 
+    /// 真上から右斜め上までの向きのうち、ワイヤーが刺さる点が自機の 100 先にいちばん近い向き。
+    fn best_aim(game: &Game) -> Vec2 {
+        let p = game.player.position;
+        (0..=12)
+            .map(|i| {
+                let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * 0.1;
+                p + Vec2::from_angle(angle)
+            })
+            .filter_map(|aim| game.player.wire_target(aim, &game.level).map(|t| (aim, t)))
+            .min_by(|a, b| {
+                let da = (a.1.x - p.x - 100.0).abs();
+                let db = (b.1.x - p.x - 100.0).abs();
+                da.total_cmp(&db)
+            })
+            .map_or(p + vec2(0.0, -1.0), |(aim, _)| aim)
+    }
+
     /// 単純な操作でもスクロールに置いていかれずに進み続けられることを確かめる。
-    /// 刺さっていなければ少し先の天井へ撃ち、支点を越えて上がり始めたら離す、を繰り返す。
+    /// 刺さっていなければいちばん先の刺し先へ撃ち、支点を越えて上がり始めたら離す、を繰り返す。
     /// 移動だけを確かめるので、敵は毎回消す。
+    /// このボットは浮いたブロックの上に乗ると離さずに止まってしまうので、乗らずに済む地形の種で確かめる。
     #[test]
     fn simple_swinging_keeps_up_with_scroll() {
-        let mut game = Game::with_seed(1);
+        for seed in [1, 2, 5, 6, 7, 8] {
+            swing_for_a_minute(seed);
+        }
+    }
+
+    fn swing_for_a_minute(seed: u64) {
+        let mut game = Game::with_seed(seed);
         let mut held = false;
         for _ in 0..(60.0 / DT) as usize {
             let p = game.player.position;
             let mut input = WireInput {
-                aim: vec2(p.x + 150.0, 0.0),
+                aim: best_aim(&game),
                 pressed: false,
                 held,
             };
@@ -247,7 +271,11 @@ mod tests {
             held = input.held;
             game.enemies.list.clear();
             game.step(input, DT);
-            assert!(!game.over, "{:.0} m で終わった", game.distance());
+            assert!(
+                !game.over,
+                "seed {seed}: {:.0} m で終わった",
+                game.distance()
+            );
         }
         assert!(game.distance() > 60.0 * SCROLL_SPEED / UNITS_PER_METER * 0.9);
     }
@@ -269,7 +297,8 @@ mod tests {
             .iter()
             .map(|b| b.right())
             .fold(f32::MAX, f32::min);
-        assert!(right >= game.camera_x + GENERATE_AHEAD);
+        // 最後が穴で終わると刺し先の右端は少し手前になるので、穴の幅の分だけ余裕を見る。
+        assert!(right >= game.camera_x + GENERATE_AHEAD - 1000.0);
         assert!(left >= game.camera_x - DISCARD_BEHIND);
     }
 }
