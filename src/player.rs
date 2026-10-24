@@ -27,8 +27,6 @@ pub struct WireInput {
     pub aim: Vec2,
     /// 左クリックを押した瞬間。次に回る更新で 1 回だけ真になる。
     pub pressed: bool,
-    /// 左クリックを押している間は真。
-    pub held: bool,
 }
 
 /// 刺さっているワイヤー。
@@ -57,10 +55,10 @@ impl Player {
     }
 
     pub fn update(&mut self, input: WireInput, level: &Level, dt: f32) {
-        if !input.held {
-            // 離すとワイヤーが外れ、そのときの速さと向きのまま飛ぶ。
+        // クリックするたびに今のワイヤーを外して撃ち直す。何もない所へ撃てば外れるだけになり、
+        // そのときの速さと向きのまま飛ぶ。
+        if input.pressed {
             self.anchor = None;
-        } else if input.pressed && self.anchor.is_none() {
             self.shoot_wire(input.aim, level);
         }
         if let Some((_, left)) = &mut self.miss {
@@ -185,19 +183,11 @@ mod tests {
     }
 
     fn press(aim: Vec2) -> WireInput {
-        WireInput {
-            aim,
-            pressed: true,
-            held: true,
-        }
+        WireInput { aim, pressed: true }
     }
 
-    fn hold(aim: Vec2) -> WireInput {
-        WireInput {
-            aim,
-            pressed: false,
-            held: true,
-        }
+    fn idle() -> WireInput {
+        WireInput::default()
     }
 
     #[test]
@@ -243,9 +233,9 @@ mod tests {
         let mut player = Player::new(vec2(0.0, MAX_WIRE_LENGTH + 50.0));
         player.update(press(vec2(0.0, 0.0)), &level, DT);
         assert!(player.anchor.is_none());
-        // 押し続けても、もう一度押すまで撃ち直さない。
+        // もう一度クリックするまで撃ち直さない。
         player.position.y = 300.0;
-        player.update(hold(vec2(0.0, 0.0)), &level, DT);
+        player.update(idle(), &level, DT);
         assert!(player.anchor.is_none());
     }
 
@@ -257,23 +247,36 @@ mod tests {
         player.update(press(vec2(0.0, 0.0)), &level, DT);
         let anchor = player.anchor.unwrap();
         for _ in 0..60 {
-            player.update(hold(vec2(0.0, 0.0)), &level, DT);
+            player.update(idle(), &level, DT);
             assert!(player.position.distance(anchor.point) <= anchor.length + 1e-3);
         }
         assert!(player.velocity.x > 0.0);
     }
 
     #[test]
-    fn releasing_keeps_velocity() {
+    fn clicking_empty_space_releases_and_keeps_velocity() {
         let level = ceiling();
         let mut player = Player::new(vec2(-300.0, 300.0));
         player.update(press(vec2(0.0, 0.0)), &level, DT);
         for _ in 0..30 {
-            player.update(hold(vec2(0.0, 0.0)), &level, DT);
+            player.update(idle(), &level, DT);
         }
         let before = player.velocity;
-        player.update(WireInput::default(), &level, DT);
+        // 真下へ撃つと何にも刺さらず、ワイヤーが外れるだけになる。
+        let below = player.position + vec2(0.0, 100.0);
+        player.update(press(below), &level, DT);
         assert!(player.anchor.is_none());
         assert_eq!(player.velocity, before + vec2(0.0, GRAVITY * DT));
+    }
+
+    #[test]
+    fn clicking_again_switches_anchor() {
+        let level = ceiling();
+        let mut player = Player::new(vec2(0.0, 300.0));
+        player.update(press(vec2(-100.0, 0.0)), &level, DT);
+        let first = player.anchor.unwrap().point;
+        player.update(press(player.position + vec2(100.0, -300.0)), &level, DT);
+        let second = player.anchor.unwrap().point;
+        assert!(second.x > first.x);
     }
 }

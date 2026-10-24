@@ -43,7 +43,6 @@ async fn main() {
         let frame_time = get_frame_time().min(MAX_FRAME_TIME);
         let camera = view_camera(game.camera_x);
         let aim = camera.screen_to_world(mouse_position().into());
-        let held = is_mouse_button_down(MouseButton::Left);
         wire_pressed |= is_mouse_button_pressed(MouseButton::Left);
         if game.over {
             since_over += frame_time;
@@ -59,7 +58,6 @@ async fn main() {
                 let input = WireInput {
                     aim,
                     pressed: wire_pressed,
-                    held,
                 };
                 game.step(input, FIXED_DT);
                 wire_pressed = false;
@@ -81,7 +79,7 @@ async fn main() {
             Color::from_rgba(180, 190, 205, 255),
         );
         draw_text(
-            "hold left click: wire",
+            "click: shoot wire (click empty space to let go)",
             16.0,
             screen_height() - 16.0,
             22.0,
