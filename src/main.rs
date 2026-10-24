@@ -4,7 +4,7 @@ mod ship;
 use macroquad::prelude::*;
 
 use arena::Arena;
-use ship::Ship;
+use ship::{Ship, ShipInput};
 
 /// 更新は固定の刻みで回し、画面のリフレッシュレートで手触りが変わらないようにする。
 const FIXED_DT: f32 = 1.0 / 120.0;
@@ -37,10 +37,11 @@ async fn main() {
         // カメラは機体を常に画面中央に置く。操縦の目標は前のフレームの位置で作ったカメラで変換する。
         let camera = view_camera(ship.position);
         let aim = camera.screen_to_world(mouse_position().into());
+        let input = read_input();
 
         accumulator += get_frame_time().min(MAX_FRAME_TIME);
         while accumulator >= FIXED_DT {
-            ship.update(aim, &arena, FIXED_DT);
+            ship.update(aim, input, &arena, FIXED_DT);
             accumulator -= FIXED_DT;
         }
 
@@ -52,16 +53,77 @@ async fn main() {
         ship.draw();
 
         set_default_camera();
-        draw_text(
-            format!("speed {:.0}", ship.velocity.length()),
-            16.0,
-            32.0,
-            24.0,
-            Color::from_rgba(180, 190, 205, 255),
-        );
+        draw_hud(&ship);
 
         next_frame().await
     }
+}
+
+/// Shift（左右どちらでも）を押しているあいだドリフト。Space を押した瞬間にブースト。
+/// どちらも JIS / US で位置が変わらない。`is_key_pressed` はキーリピートを含まないので、
+/// Space を押し続けてもブーストは一度だけしか始まらない。
+fn read_input() -> ShipInput {
+    ShipInput {
+        drift: is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift),
+        boost: is_key_pressed(KeyCode::Space),
+    }
+}
+
+fn draw_hud(ship: &Ship) {
+    let text = Color::from_rgba(180, 190, 205, 255);
+    draw_text(
+        format!("speed {:.0}", ship.velocity.length()),
+        16.0,
+        32.0,
+        24.0,
+        text,
+    );
+
+    if ship.drifting {
+        draw_text(
+            "drift",
+            16.0,
+            58.0,
+            24.0,
+            Color::from_rgba(120, 210, 255, 255),
+        );
+    }
+
+    let (label, color) = if ship.is_boosting() {
+        (
+            format!("boost {:.1}", ship.boost_remaining),
+            Color::from_rgba(255, 196, 90, 255),
+        )
+    } else if ship.boost_cooldown > 0.0 {
+        (
+            format!("boost {:.1}", ship.boost_cooldown),
+            Color::from_rgba(140, 155, 175, 255),
+        )
+    } else {
+        ("boost".to_owned(), Color::from_rgba(140, 220, 160, 255))
+    };
+    draw_text(&label, 16.0, 86.0, 22.0, color);
+
+    let bar_x = 16.0;
+    let bar_y = 96.0;
+    let bar_w = 160.0;
+    let bar_h = 8.0;
+    draw_rectangle(
+        bar_x,
+        bar_y,
+        bar_w,
+        bar_h,
+        Color::from_rgba(36, 42, 56, 255),
+    );
+    draw_rectangle(bar_x, bar_y, bar_w * ship.boost_charge(), bar_h, color);
+
+    draw_text(
+        "Shift drift    Space boost",
+        16.0,
+        screen_height() - 16.0,
+        22.0,
+        Color::from_rgba(150, 160, 175, 200),
+    );
 }
 
 fn view_camera(center: Vec2) -> Camera2D {
