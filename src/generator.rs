@@ -9,9 +9,8 @@ pub const MAX_ANCHOR_GAP: f32 = 350.0;
 pub const ANCHOR_LOWEST: f32 = 450.0;
 /// 天井の上端。画面より十分上に置き、天井の上を回り込めないようにする。
 const CEILING_TOP: f32 = -1000.0;
-/// 開始直後の平らな天井の高さと長さ。最初の数秒は落ち着いて振れるようにする。
+/// 開始位置のあたりの平らな天井の高さ。最初の数秒は落ち着いて振れるようにする。
 const START_CEILING_BOTTOM: f32 = 120.0;
-const START_FLAT_LENGTH: f32 = 1400.0;
 /// 天井の区間の幅と、下端の高さの範囲。
 const CEILING_WIDTH: (f32, f32) = (200.0, 500.0);
 const CEILING_BOTTOM: (f32, f32) = (80.0, 260.0);
@@ -39,12 +38,13 @@ pub struct Generator {
 }
 
 impl Generator {
-    pub fn new(start_x: f32, seed: u64) -> Self {
+    /// `start_x` から地形を作り始め、`flat_until` までは平らな天井にする。
+    pub fn new(start_x: f32, flat_until: f32, seed: u64) -> Self {
         let rng = RandGenerator::new();
         rng.srand(seed);
         Self {
             next_x: start_x,
-            flat_until: start_x + START_FLAT_LENGTH,
+            flat_until,
             last_anchor: start_x,
             rng,
         }
@@ -115,9 +115,11 @@ impl Generator {
 mod tests {
     use super::*;
 
+    const FLAT: f32 = 1400.0;
+
     fn generate(seed: u64, until: f32) -> Level {
         let mut level = Level::default();
-        let mut generator = Generator::new(0.0, seed);
+        let mut generator = Generator::new(0.0, FLAT, seed);
         generator.fill(&mut level, until);
         level
     }
@@ -173,7 +175,7 @@ mod tests {
 
     #[test]
     fn starts_with_flat_ceiling() {
-        let level = generate(5, START_FLAT_LENGTH);
+        let level = generate(5, FLAT);
         assert!(level
             .blocks
             .iter()

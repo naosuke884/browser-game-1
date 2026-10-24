@@ -16,8 +16,10 @@ const GENERATE_AHEAD: f32 = 4000.0;
 /// 最も右まで進んだときのカメラの左端より、これだけ左の地形は捨てる。
 /// 少し戻るのは自由だが、ずっと戻ると地形がなくなり、刺す先がなくて落ちる。
 const KEEP_BEHIND: f32 = 3000.0;
-/// 開始時の自機の、カメラ左端からの位置。
+/// 開始時の自機の位置。
 const START_OFFSET: Vec2 = vec2(300.0, 450.0);
+/// 開始位置より左と、開始位置から右へこの幅までは平らな天井にし、毎回同じ形で始まるようにする。
+const START_FLAT_WIDTH: f32 = 1100.0;
 /// 敵との当たり判定は見た目より小さくし、かすっただけでは終わらないようにする。
 const PLAYER_HURT_RADIUS: f32 = PLAYER_RADIUS * 0.7;
 /// 敵 1 体の基本の得点。連鎖の倍率を掛けて入る。
@@ -54,7 +56,7 @@ impl Game {
 
     pub fn with_seed(seed: u64) -> Self {
         let mut level = Level::default();
-        let mut generator = Generator::new(-KEEP_BEHIND, seed);
+        let mut generator = Generator::new(-KEEP_BEHIND, START_OFFSET.x + START_FLAT_WIDTH, seed);
         generator.fill(&mut level, GENERATE_AHEAD);
         let start = START_OFFSET;
         // 最初から真上の天井へワイヤーを刺した状態で始める。
@@ -215,10 +217,13 @@ mod tests {
     }
 
     #[test]
-    fn starts_hanging_from_the_ceiling() {
-        let game = Game::with_seed(1);
-        let anchor = game.player.anchor.unwrap();
-        assert_eq!(anchor.point.x, game.player.position.x);
+    fn starts_hanging_from_the_same_flat_ceiling_every_time() {
+        for seed in 0..20 {
+            let game = Game::with_seed(seed);
+            let anchor = game.player.anchor.unwrap();
+            assert_eq!(anchor.point, vec2(START_OFFSET.x, 120.0));
+            assert_eq!(game.player.position, START_OFFSET);
+        }
     }
 
     #[test]
@@ -316,7 +321,7 @@ mod tests {
     /// 仕組みが壊れていないことの確認なので、最初の 30 秒を、止まらずに進める種だけで確かめる。
     #[test]
     fn simple_swinging_makes_progress() {
-        for seed in [3, 5, 8] {
+        for seed in [2, 4, 5, 6, 8, 10] {
             swing_for_a_while(seed);
         }
     }
