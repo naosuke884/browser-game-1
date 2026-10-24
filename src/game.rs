@@ -18,6 +18,8 @@ const DISCARD_BEHIND: f32 = 200.0;
 const START_OFFSET: Vec2 = vec2(300.0, 450.0);
 /// 敵との当たり判定は見た目より小さくし、かすっただけでは終わらないようにする。
 const PLAYER_HURT_RADIUS: f32 = PLAYER_RADIUS * 0.7;
+/// 敵 1 体の基本の得点。連鎖の倍率を掛けて入る。
+const KILL_POINTS: u32 = 100;
 /// 画面の距離表示の単位。ワールドの 10 を 1 m と数える。
 const UNITS_PER_METER: f32 = 10.0;
 
@@ -29,6 +31,10 @@ pub struct Game {
     pub enemies: Enemies,
     /// ワイヤーで倒した敵の数。
     pub kills: u32,
+    /// 敵を倒して得た点の合計。
+    kill_points: u32,
+    /// 天井やブロックに刺さずに続けて倒した数。次に倒した敵の倍率は chain + 1 になる。
+    pub chain: u32,
     /// カメラの左端のワールド x 座標。
     pub camera_x: f32,
     start_x: f32,
@@ -55,6 +61,8 @@ impl Game {
             player: Player::new(start),
             enemies: Enemies::new(seed),
             kills: 0,
+            kill_points: 0,
+            chain: 0,
             camera_x: 0.0,
             start_x: start.x,
             best_x: start.x,
@@ -74,12 +82,17 @@ impl Game {
 
         self.aim = input.aim;
         // 撃ったワイヤーが地形より手前の敵に当たったら、その敵を倒して引き寄せられる。
+        // 天井やブロックに刺すか、何もない所へ撃つと連鎖が切れる。
         if input.pressed {
             if let Some((index, point)) = self.enemy_target(input.aim) {
                 self.enemies.list.swap_remove(index);
                 self.kills += 1;
+                self.chain += 1;
+                self.kill_points += KILL_POINTS * self.chain;
                 self.player.pull_toward(point);
                 input.pressed = false;
+            } else {
+                self.chain = 0;
             }
         }
         self.player.update(input, &self.level, dt);
@@ -111,6 +124,11 @@ impl Game {
             .raycast(origin, dir, t)
             .is_some_and(|p| p.distance(origin) < t);
         (!blocked).then(|| (index, origin + dir * t))
+    }
+
+    /// 得点。進んだ距離 1 m につき 1 点と、敵を倒した点の合計。
+    pub fn score(&self) -> u32 {
+        self.distance() as u32 + self.kill_points
     }
 
     /// 開始位置から最も右へ進んだ距離（m）。
@@ -173,6 +191,46 @@ mod tests {
         assert!(game.enemies.list.is_empty());
         assert!(game.player.anchor.is_none());
         assert!(game.player.velocity.x > 600.0);
+    }
+
+    /// 自機の右 `dx` に浮遊する敵を 1 体置く。
+    fn place_enemy(game: &mut Game, dx: f32) {
+        let p = game.player.position;
+        let mut enemies = Enemies::new(1);
+        enemies.update(game.camera_x, p, 100.0, DT);
+        let mut enemy = enemies.list.pop().unwrap();
+        enemy.position = p + vec2(dx, 0.0);
+        game.enemies.list.push(enemy);
+    }
+
+    /// 自機から `dir` の向きへワイヤーを撃つ。
+    fn shoot(game: &mut Game, dir: Vec2) {
+        let input = WireInput {
+            aim: game.player.position + dir,
+            pressed: true,
+            reel: 0.0,
+        };
+        game.step(input, DT);
+    }
+
+    #[test]
+    fn chained_kills_multiply_points_until_wire_hits_terrain() {
+        let mut game = Game::with_seed(1);
+        place_enemy(&mut game, 300.0);
+        shoot(&mut game, vec2(1.0, 0.0));
+        place_enemy(&mut game, 300.0);
+        shoot(&mut game, vec2(1.0, 0.0));
+        assert_eq!(game.chain, 2);
+        assert_eq!(game.kill_points, KILL_POINTS + KILL_POINTS * 2);
+
+        // 天井に刺すと連鎖が切れ、次の敵は 1 倍に戻る。
+        shoot(&mut game, vec2(0.0, -1.0));
+        assert!(game.player.anchor.is_some());
+        assert_eq!(game.chain, 0);
+        place_enemy(&mut game, 300.0);
+        shoot(&mut game, vec2(1.0, 0.0));
+        assert_eq!(game.kill_points, KILL_POINTS * 4);
+        assert_eq!(game.score(), game.distance() as u32 + KILL_POINTS * 4);
     }
 
     #[test]

@@ -50,9 +50,10 @@ python3 -m http.server 8080 --directory web
 
 - `index.html` — キャンバスをウィンドウいっぱいに広げ、右クリックメニューを出さない
 - `mq_js_bundle.js` — macroquad 0.4.16 同梱の専用ローダー（`wasm-bindgen` ではない）
+- `storage.js` — ハイスコアを localStorage に保存する関数を wasm に渡す
 - `browser-game-1.wasm` — `./scripts/build-wasm.sh` が生成する（gitignore 済み）
 
-公開するときは、ビルド後の `web/` ディレクトリをそのまま置きます。itch.io などに上げる場合もこの 3 ファイルです。キャンバスは表示領域の 100% なので、ページや埋め込み枠のサイズ変更に追従します。
+公開するときは、ビルド後の `web/` ディレクトリをそのまま置きます。itch.io などに上げる場合もこの 4 ファイルです。キャンバスは表示領域の 100% なので、ページや埋め込み枠のサイズ変更に追従します。
 
 ## 方針
 

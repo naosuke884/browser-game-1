@@ -3,6 +3,7 @@ mod game;
 mod generator;
 mod level;
 mod player;
+mod storage;
 
 use macroquad::prelude::*;
 
@@ -33,6 +34,7 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut game = Game::new();
+    let mut high_score = storage::load_high_score();
     let mut accumulator = 0.0;
     // ゲームオーバーになってからの経過時間。
     let mut since_over = 0.0;
@@ -68,6 +70,10 @@ async fn main() {
                 wire_pressed = false;
                 accumulator -= FIXED_DT;
             }
+            if game.over && game.score() > high_score {
+                high_score = game.score();
+                storage::save_high_score(high_score);
+            }
         }
 
         clear_background(Color::from_rgba(16, 18, 24, 255));
@@ -77,7 +83,12 @@ async fn main() {
 
         set_default_camera();
         draw_text(
-            format!("{:.0} m   kills {}", game.distance(), game.kills),
+            format!(
+                "score {}   {:.0} m   kills {}",
+                game.score(),
+                game.distance(),
+                game.kills
+            ),
             16.0,
             32.0,
             28.0,
@@ -90,8 +101,24 @@ async fn main() {
             22.0,
             Color::from_rgba(150, 160, 175, 200),
         );
+        draw_text(
+            format!("best {high_score}"),
+            16.0,
+            60.0,
+            22.0,
+            Color::from_rgba(150, 160, 175, 255),
+        );
+        if game.chain > 0 {
+            draw_text(
+                format!("chain x{}", game.chain + 1),
+                16.0,
+                88.0,
+                28.0,
+                Color::from_rgba(255, 200, 80, 255),
+            );
+        }
         if game.over {
-            draw_game_over(&game, since_over);
+            draw_game_over(&game, since_over, high_score);
         }
 
         next_frame().await
@@ -111,7 +138,7 @@ fn view_camera(camera_x: f32) -> Camera2D {
     }
 }
 
-fn draw_game_over(game: &Game, since_over: f32) {
+fn draw_game_over(game: &Game, since_over: f32, high_score: u32) {
     draw_rectangle(
         0.0,
         0.0,
@@ -122,7 +149,12 @@ fn draw_game_over(game: &Game, since_over: f32) {
     let center = vec2(screen_width(), screen_height()) / 2.0;
     draw_centered_text("GAME OVER", center.x, center.y - 20.0, 56.0, WHITE);
     draw_centered_text(
-        &format!("{:.0} m   kills {}", game.distance(), game.kills),
+        &format!(
+            "score {}   ({:.0} m, kills {})   best {high_score}",
+            game.score(),
+            game.distance(),
+            game.kills
+        ),
         center.x,
         center.y + 24.0,
         28.0,

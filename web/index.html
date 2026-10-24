@@ -34,6 +34,8 @@
          先にグローバルを置かないと、その代入が例外になりプラグイン登録が途中で止まる。 -->
     <script>var register_plugin;</script>
     <script src="mq_js_bundle.js"></script>
+    <!-- ハイスコアの保存。load() より前に読み込む。 -->
+    <script src="storage.js"></script>
     <script>
         // 右クリックのブラウザメニューを出さない。
         // preventDefault は contextmenu だけを止め、mousedown / mouseup はローダーへ届く。
