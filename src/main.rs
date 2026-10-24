@@ -1,23 +1,16 @@
-mod arena;
-mod bullet;
-mod enemy;
-mod ship;
+mod game;
+mod generator;
+mod level;
+mod player;
 
 use macroquad::prelude::*;
 
-use arena::Arena;
-use bullet::{Bullet, BULLET_RADIUS};
-use enemy::Enemies;
-use ship::{Ship, ShipInput, SHIP_RADIUS};
+use game::{Game, VIEW_HEIGHT};
 
 /// 更新は固定の刻みで回し、画面のリフレッシュレートで手触りが変わらないようにする。
 const FIXED_DT: f32 = 1.0 / 120.0;
 /// 処理落ちしたときに 1 フレームで追いつく上限。これを超えた分は捨ててゲームを遅らせる。
 const MAX_FRAME_TIME: f32 = 0.1;
-/// 画面に映すワールドの高さ。ウィンドウの大きさで見える範囲が変わりすぎないよう固定し、幅は縦横比で決める。
-const VIEW_HEIGHT: f32 = 900.0;
-/// 敵との当たり判定は見た目より小さくし、かすっただけでは終わらないようにする。
-const SHIP_HURT_RADIUS: f32 = SHIP_RADIUS * 0.7;
 /// ゲームオーバー直後のクリックでうっかりやり直さないよう、受け付けない時間。
 const RETRY_DELAY: f32 = 0.6;
 
@@ -37,204 +30,81 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let arena = Arena::new(2400.0, 1600.0);
-    let mut ship = Ship::new(Vec2::ZERO);
-    let mut bullet = Bullet::Held;
-    let mut enemies = Enemies::new(seed());
-    let mut last_recovery = None;
-    let mut survived = 0.0;
-    // ゲームオーバーになってからの経過時間。プレイ中は None。
-    let mut game_over: Option<f32> = None;
+    let mut game = Game::new();
     let mut accumulator = 0.0;
-    // クリックは描画フレームで受け、次に回る固定刻みの更新で 1 回だけ使う。
-    let mut fire_requested = false;
-    let mut boost_requested = false;
+    // ゲームオーバーになってからの経過時間。
+    let mut since_over = 0.0;
 
     loop {
-        // カメラは機体を常に画面中央に置く。操縦の目標は前のフレームの位置で作ったカメラで変換する。
-        let camera = view_camera(ship.position);
-        let aim = camera.screen_to_world(mouse_position().into());
-        fire_requested |= is_mouse_button_pressed(MouseButton::Left);
-        let mut input = read_input();
-        boost_requested |= input.boost;
-
         let frame_time = get_frame_time().min(MAX_FRAME_TIME);
-        if let Some(since) = game_over.as_mut() {
-            *since += frame_time;
-            if *since >= RETRY_DELAY && fire_requested {
-                ship = Ship::new(Vec2::ZERO);
-                bullet = Bullet::Held;
-                enemies = Enemies::new(seed());
-                last_recovery = None;
-                survived = 0.0;
-                game_over = None;
+        if game.over {
+            since_over += frame_time;
+            if since_over >= RETRY_DELAY && is_mouse_button_pressed(MouseButton::Left) {
+                game = Game::new();
+                accumulator = 0.0;
+                since_over = 0.0;
             }
-            fire_requested = false;
-            boost_requested = false;
         } else {
             accumulator += frame_time;
-        }
-        while game_over.is_none() && accumulator >= FIXED_DT {
-            input.boost = boost_requested;
-            ship.update(aim, input, &arena, FIXED_DT);
-            boost_requested = false;
-            if let Some(recovery) = bullet.update(fire_requested, &ship, &arena, FIXED_DT) {
-                last_recovery = Some(recovery);
+            while accumulator >= FIXED_DT && !game.over {
+                game.step(FIXED_DT);
+                accumulator -= FIXED_DT;
             }
-            fire_requested = false;
-            enemies.update(ship.position, &arena, FIXED_DT);
-            // 弾は敵を貫通し、触れた敵をすべて倒す。
-            if let Bullet::Flying(b) = &mut bullet {
-                b.kills += enemies.remove_touching(b.position, BULLET_RADIUS);
-            }
-            if enemies.any_touching(ship.position, SHIP_HURT_RADIUS) {
-                game_over = Some(0.0);
-                accumulator = 0.0;
-                break;
-            }
-            survived += FIXED_DT;
-            accumulator -= FIXED_DT;
         }
 
         clear_background(Color::from_rgba(16, 18, 24, 255));
 
-        set_camera(&view_camera(ship.position));
-        arena.draw();
-        enemies.draw();
-        ship.draw_dead_zone();
-        ship.draw();
-        bullet.draw(&ship);
-        bullet.draw_offscreen_marker(view_rect(ship.position));
+        set_camera(&Camera2D::from_display_rect(view_rect(game.camera_x)));
+        game.draw();
 
         set_default_camera();
-        draw_hud(&ship);
-        let bounces = match &bullet {
-            Bullet::Flying(b) => format!("bounces {} / kills {}", b.bounces, b.kills),
-            Bullet::Held => match &last_recovery {
-                Some(r) => format!(
-                    "recovered: bounces {} / kills {} / speed {:.0}",
-                    r.bounces, r.kills, r.ship_speed
-                ),
-                None => "click to fire".to_owned(),
-            },
-        };
         draw_text(
-            bounces,
+            format!("{:.0} m", game.distance()),
             16.0,
-            132.0,
-            24.0,
+            32.0,
+            28.0,
             Color::from_rgba(180, 190, 205, 255),
         );
-        draw_text(
-            format!("time {survived:.1}"),
-            16.0,
-            160.0,
-            24.0,
-            Color::from_rgba(180, 190, 205, 255),
-        );
-        if let Some(since) = game_over {
-            draw_rectangle(
-                0.0,
-                0.0,
-                screen_width(),
-                screen_height(),
-                Color::from_rgba(0, 0, 0, 140),
-            );
-            let center = vec2(screen_width(), screen_height()) / 2.0;
-            draw_centered_text("GAME OVER", center.x, center.y - 20.0, 56.0, WHITE);
-            draw_centered_text(
-                &format!("time {survived:.1}"),
-                center.x,
-                center.y + 24.0,
-                28.0,
-                WHITE,
-            );
-            if since >= RETRY_DELAY {
-                draw_centered_text(
-                    "click to retry",
-                    center.x,
-                    center.y + 64.0,
-                    24.0,
-                    Color::from_rgba(180, 190, 205, 255),
-                );
-            }
+        if game.over {
+            draw_game_over(&game, since_over);
         }
 
         next_frame().await
     }
 }
 
-/// Shift（左右どちらでも）を押しているあいだドリフト。Space を押した瞬間にブースト。
-/// どちらも JIS / US で位置が変わらない。`is_key_pressed` はキーリピートを含まないので、
-/// Space を押し続けてもブーストは一度だけしか始まらない。
-/// Space はクリックと同じく、次に回る固定刻みの更新まで持ち越す。
-fn read_input() -> ShipInput {
-    ShipInput {
-        drift: is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift),
-        boost: is_key_pressed(KeyCode::Space),
-    }
+/// 画面に映るワールドの範囲。縦は固定で、横は縦横比で決める。
+fn view_rect(camera_x: f32) -> Rect {
+    let aspect = screen_width() / screen_height();
+    Rect::new(camera_x, 0.0, VIEW_HEIGHT * aspect, VIEW_HEIGHT)
 }
 
-fn draw_hud(ship: &Ship) {
-    let text = Color::from_rgba(180, 190, 205, 255);
-    draw_text(
-        format!("speed {:.0}", ship.velocity.length()),
-        16.0,
-        32.0,
-        24.0,
-        text,
+fn draw_game_over(game: &Game, since_over: f32) {
+    draw_rectangle(
+        0.0,
+        0.0,
+        screen_width(),
+        screen_height(),
+        Color::from_rgba(0, 0, 0, 140),
     );
-
-    if ship.drifting {
-        draw_text(
-            "drift",
-            16.0,
-            58.0,
+    let center = vec2(screen_width(), screen_height()) / 2.0;
+    draw_centered_text("GAME OVER", center.x, center.y - 20.0, 56.0, WHITE);
+    draw_centered_text(
+        &format!("{:.0} m", game.distance()),
+        center.x,
+        center.y + 24.0,
+        28.0,
+        WHITE,
+    );
+    if since_over >= RETRY_DELAY {
+        draw_centered_text(
+            "click to retry",
+            center.x,
+            center.y + 64.0,
             24.0,
-            Color::from_rgba(120, 210, 255, 255),
+            Color::from_rgba(180, 190, 205, 255),
         );
     }
-
-    let (label, color) = if ship.is_boosting() {
-        (
-            format!("boost {:.1}", ship.boost_remaining),
-            Color::from_rgba(255, 196, 90, 255),
-        )
-    } else if ship.boost_cooldown > 0.0 {
-        (
-            format!("boost {:.1}", ship.boost_cooldown),
-            Color::from_rgba(140, 155, 175, 255),
-        )
-    } else {
-        ("boost".to_owned(), Color::from_rgba(140, 220, 160, 255))
-    };
-    draw_text(&label, 16.0, 86.0, 22.0, color);
-
-    let bar_x = 16.0;
-    let bar_y = 96.0;
-    let bar_w = 160.0;
-    let bar_h = 8.0;
-    draw_rectangle(
-        bar_x,
-        bar_y,
-        bar_w,
-        bar_h,
-        Color::from_rgba(36, 42, 56, 255),
-    );
-    draw_rectangle(bar_x, bar_y, bar_w * ship.boost_charge(), bar_h, color);
-
-    draw_text(
-        "Click fire    Shift drift    Space boost",
-        16.0,
-        screen_height() - 16.0,
-        22.0,
-        Color::from_rgba(150, 160, 175, 200),
-    );
-}
-
-/// 毎回違う敵の出方にするため、起動時刻から種を作る。
-fn seed() -> u64 {
-    (macroquad::miniquad::date::now() * 1000.0) as u64
 }
 
 fn draw_centered_text(text: &str, center_x: f32, baseline_y: f32, font_size: f32, color: Color) {
@@ -246,20 +116,4 @@ fn draw_centered_text(text: &str, center_x: f32, baseline_y: f32, font_size: f32
         font_size,
         color,
     );
-}
-
-fn view_camera(center: Vec2) -> Camera2D {
-    Camera2D::from_display_rect(view_rect(center))
-}
-
-/// 画面に映るワールドの範囲。
-fn view_rect(center: Vec2) -> Rect {
-    let aspect = screen_width() / screen_height();
-    let size = vec2(VIEW_HEIGHT * aspect, VIEW_HEIGHT);
-    Rect::new(
-        center.x - size.x / 2.0,
-        center.y - size.y / 2.0,
-        size.x,
-        size.y,
-    )
 }
