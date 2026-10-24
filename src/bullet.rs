@@ -19,6 +19,8 @@ pub struct FlyingBullet {
     pub position: Vec2,
     pub velocity: Vec2,
     pub bounces: u32,
+    /// この 1 投で倒した敵の数。
+    pub kills: u32,
     /// 撃った直後は機体と重なっているので、一度回収範囲の外へ出るまで回収できない。
     armed: bool,
 }
@@ -26,17 +28,12 @@ pub struct FlyingBullet {
 /// 弾を回収したときの記録。得点倍率の計算に使う。
 pub struct Recovery {
     pub bounces: u32,
+    pub kills: u32,
     pub ship_speed: f32,
 }
 
 impl Bullet {
-    pub fn update(
-        &mut self,
-        fire: bool,
-        ship: &Ship,
-        arena: &Arena,
-        dt: f32,
-    ) -> Option<Recovery> {
+    pub fn update(&mut self, fire: bool, ship: &Ship, arena: &Arena, dt: f32) -> Option<Recovery> {
         match self {
             Bullet::Held => {
                 if fire {
@@ -45,6 +42,7 @@ impl Bullet {
                         position: ship.position + forward * SHIP_RADIUS,
                         velocity: forward * BULLET_SPEED,
                         bounces: 0,
+                        kills: 0,
                         armed: false,
                     });
                 }
@@ -71,6 +69,7 @@ impl Bullet {
                 if near_ship {
                     let recovery = Recovery {
                         bounces: bullet.bounces,
+                        kills: bullet.kills,
                         ship_speed: ship.velocity.length(),
                     };
                     *self = Bullet::Held;
