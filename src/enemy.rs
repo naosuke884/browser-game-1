@@ -31,7 +31,7 @@ pub struct Enemy {
 }
 
 impl Enemy {
-    fn update(&mut self, camera_x: f32, scroll_speed: f32, player: Vec2, dt: f32) {
+    fn update(&mut self, camera_x: f32, player: Vec2, dt: f32) {
         match &mut self.kind {
             Kind::Floater { base_y, phase } => {
                 *phase += FLOATER_SWAY_RATE * dt;
@@ -46,7 +46,7 @@ impl Enemy {
                     let blend = 1.0 - (-4.0 * dt).exp();
                     self.position.y += (player.y - self.position.y) * blend;
                 } else {
-                    self.position.x -= (CHARGER_SPEED + scroll_speed) * dt;
+                    self.position.x -= CHARGER_SPEED * dt;
                 }
             }
         }
@@ -89,14 +89,7 @@ impl Enemies {
     }
 
     /// `distance` は進んだ距離（m）。
-    pub fn update(
-        &mut self,
-        camera_x: f32,
-        scroll_speed: f32,
-        player: Vec2,
-        distance: f32,
-        dt: f32,
-    ) {
+    pub fn update(&mut self, camera_x: f32, player: Vec2, distance: f32, dt: f32) {
         if distance >= START_DISTANCE {
             self.until_spawn -= dt;
             if self.until_spawn <= 0.0 {
@@ -105,7 +98,7 @@ impl Enemies {
             }
         }
         for enemy in &mut self.list {
-            enemy.update(camera_x, scroll_speed, player, dt);
+            enemy.update(camera_x, player, dt);
         }
         self.list
             .retain(|e| e.position.x > camera_x - DISCARD_BEHIND);
@@ -203,7 +196,7 @@ mod tests {
     fn no_enemies_before_start_distance() {
         let mut enemies = Enemies::new(1);
         for _ in 0..1200 {
-            enemies.update(0.0, 200.0, Vec2::ZERO, START_DISTANCE - 1.0, DT);
+            enemies.update(0.0, Vec2::ZERO, START_DISTANCE - 1.0, DT);
         }
         assert!(enemies.list.is_empty());
     }
@@ -211,7 +204,7 @@ mod tests {
     #[test]
     fn spawns_ahead_after_start_distance() {
         let mut enemies = Enemies::new(1);
-        enemies.update(1000.0, 200.0, Vec2::ZERO, START_DISTANCE, DT);
+        enemies.update(1000.0, Vec2::ZERO, START_DISTANCE, DT);
         assert_eq!(enemies.list.len(), 1);
         assert!(enemies.list[0].position.x > 1000.0 + 1600.0);
     }
@@ -246,11 +239,11 @@ mod tests {
             },
         };
         for _ in 0..(CHARGER_AIM_TIME / DT) as usize + 1 {
-            enemy.update(0.0, 200.0, vec2(0.0, 600.0), DT);
+            enemy.update(0.0, vec2(0.0, 600.0), DT);
         }
         let x = enemy.position.x;
         assert!(enemy.position.y > 500.0);
-        enemy.update(0.0, 200.0, vec2(0.0, 600.0), DT);
+        enemy.update(0.0, vec2(0.0, 600.0), DT);
         assert!(enemy.position.x < x);
     }
 
@@ -258,7 +251,7 @@ mod tests {
     fn passed_enemies_are_discarded() {
         let mut enemies = Enemies::new(1);
         enemies.list.push(floater_at(vec2(-500.0, 400.0)));
-        enemies.update(0.0, 200.0, Vec2::ZERO, 0.0, DT);
+        enemies.update(0.0, Vec2::ZERO, 0.0, DT);
         assert!(enemies.list.is_empty());
     }
 }

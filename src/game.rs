@@ -7,11 +7,9 @@ use crate::player::{Player, WireInput, MAX_WIRE_LENGTH, PLAYER_RADIUS};
 
 /// 画面に映すワールドの高さ。y = 0 が画面の上端、y = VIEW_HEIGHT が下端。
 pub const VIEW_HEIGHT: f32 = 900.0;
-/// カメラが右へ進む速さ。
-const SCROLL_SPEED: f32 = 200.0;
-/// 自機がカメラの左端からこれより右へ出たら、カメラが追いかけて先へ進む。
-/// 画面の右端の外へ飛び出して見えなくならないようにするため。16:9 の画面で中央より少し右。
-const FOLLOW_OFFSET: f32 = 900.0;
+/// カメラは自機がカメラの左端からこの位置に来るよう右へ追いかける。左へは戻らない。
+/// 16:9 の画面で中央より少し左に置き、進む先を広く見せる。
+const FOLLOW_OFFSET: f32 = 600.0;
 /// カメラの左端からこれだけ右まで地形を作っておく。横長の画面でも右端の先まで足りる幅にする。
 const GENERATE_AHEAD: f32 = 4000.0;
 /// カメラの左端よりこれだけ左へ流れた地形は捨てる。
@@ -69,7 +67,6 @@ impl Game {
         if self.over {
             return;
         }
-        self.camera_x += SCROLL_SPEED * dt;
         self.camera_x = self.camera_x.max(self.player.position.x - FOLLOW_OFFSET);
         self.generator
             .fill(&mut self.level, self.camera_x + GENERATE_AHEAD);
@@ -86,16 +83,20 @@ impl Game {
             }
         }
         self.player.update(input, &self.level, dt);
+        // 画面の左端は壁にする。戻れないだけで、触れても終わらない。
+        let left_limit = self.camera_x + PLAYER_RADIUS;
+        if self.player.position.x < left_limit {
+            self.player.position.x = left_limit;
+            self.player.velocity.x = self.player.velocity.x.max(0.0);
+        }
         self.best_x = self.best_x.max(self.player.position.x);
         let player = self.player.position;
         let distance = self.distance();
-        self.enemies
-            .update(self.camera_x, SCROLL_SPEED, player, distance, dt);
+        self.enemies.update(self.camera_x, player, distance, dt);
 
-        let pushed_off = self.player.position.x < self.camera_x;
         let fell = self.player.position.y - PLAYER_RADIUS > VIEW_HEIGHT;
         let hit = self.enemies.any_touching(player, PLAYER_HURT_RADIUS);
-        if pushed_off || fell || hit {
+        if fell || hit {
             self.over = true;
         }
     }
@@ -147,10 +148,10 @@ mod tests {
     const DT: f32 = 1.0 / 120.0;
 
     #[test]
-    fn camera_scrolls_right() {
+    fn camera_does_not_scroll_by_itself() {
         let mut game = Game::new();
-        game.step(WireInput::default(), 1.0);
-        assert_eq!(game.camera_x, SCROLL_SPEED);
+        game.step(WireInput::default(), DT);
+        assert_eq!(game.camera_x, 0.0);
     }
 
     #[test]
@@ -158,13 +159,14 @@ mod tests {
         let mut game = Game::with_seed(1);
         let p = game.player.position;
         let mut enemies = Enemies::new(1);
-        enemies.update(game.camera_x, SCROLL_SPEED, p, 100.0, DT);
+        enemies.update(game.camera_x, p, 100.0, DT);
         let mut enemy = enemies.list.pop().unwrap();
         enemy.position = p + vec2(300.0, 0.0);
         game.enemies.list.push(enemy);
         let input = WireInput {
             aim: p + vec2(300.0, 0.0),
             pressed: true,
+            reel: 0.0,
         };
         game.step(input, DT);
         assert_eq!(game.kills, 1);
@@ -178,7 +180,7 @@ mod tests {
         let mut game = Game::with_seed(1);
         let p = game.player.position;
         let mut enemies = Enemies::new(1);
-        enemies.update(game.camera_x, SCROLL_SPEED, p, 100.0, DT);
+        enemies.update(game.camera_x, p, 100.0, DT);
         let mut enemy = enemies.list.pop().unwrap();
         enemy.position = p;
         game.enemies.list.push(enemy);
@@ -205,12 +207,14 @@ mod tests {
     }
 
     #[test]
-    fn being_left_behind_ends_the_game() {
+    fn left_edge_is_a_wall() {
         let mut game = Game::new();
-        // 自機をカメラの左端すぐ右に置き、次の更新でカメラに追い越させる。
-        game.player.position = vec2(game.camera_x + 0.5, 300.0);
+        game.player.position = vec2(game.camera_x + PLAYER_RADIUS + 1.0, 300.0);
+        game.player.velocity = vec2(-500.0, 0.0);
         game.step(WireInput::default(), DT);
-        assert!(game.over);
+        assert!(!game.over);
+        assert_eq!(game.player.position.x, game.camera_x + PLAYER_RADIUS);
+        assert_eq!(game.player.velocity.x, 0.0);
     }
 
     /// 真上から右斜め上までの向きのうち、ワイヤーが刺さる点が自機の 100 先にいちばん近い向き。
@@ -230,14 +234,14 @@ mod tests {
             .map_or(p + vec2(0.0, -1.0), |(aim, _)| aim)
     }
 
-    /// 単純な操作でもスクロールに置いていかれずに進み続けられることを確かめる。
-    /// 刺さっていなければいちばん先の刺し先へ撃ち、支点を越えて上がり始めたら離す、を繰り返す。
+    /// 単純な操作でも、落ちずに 1 分で 1000 m 以上進めることを確かめる。
+    /// 刺さっていなければ少し先の刺し先へ撃ち、支点を越えて上がり始めたら次の刺し先へ撃ち直す。
     /// 移動だけを確かめるので、敵は毎回消す。
     /// ボットは粗く、ブロックの上に乗って止まったり、低い所へ沈んだりする種がある。
     /// 地形と操作の仕組みが壊れていないことの確認なので、最後まで進める種だけで確かめる。
     #[test]
-    fn simple_swinging_keeps_up_with_scroll() {
-        for seed in [1, 2, 3, 8] {
+    fn simple_swinging_makes_progress() {
+        for seed in [1, 2, 5, 7, 8, 9, 10] {
             swing_for_a_minute(seed);
         }
     }
@@ -254,9 +258,15 @@ mod tests {
                     p.x > a.point.x && game.player.velocity.x > 0.0 && game.player.velocity.y < 0.0
                 }
             };
+            // 刺さっている間は、長さ 150 になるまで巻き取る。
+            let reel = match game.player.anchor {
+                Some(a) if a.length > 150.0 => -1.0,
+                _ => 0.0,
+            };
             let input = WireInput {
                 aim: best_aim(&game),
                 pressed,
+                reel,
             };
             game.enemies.list.clear();
             game.step(input, DT);
@@ -266,7 +276,11 @@ mod tests {
                 game.distance()
             );
         }
-        assert!(game.distance() > 60.0 * SCROLL_SPEED / UNITS_PER_METER * 0.9);
+        assert!(
+            game.distance() > 1000.0,
+            "seed {seed}: {:.0} m",
+            game.distance()
+        );
     }
 
     #[test]

@@ -44,6 +44,10 @@ async fn main() {
         let camera = view_camera(game.camera_x);
         let aim = camera.screen_to_world(mouse_position().into());
         wire_pressed |= is_mouse_button_pressed(MouseButton::Left);
+        // W か上矢印で巻き取り、S か下矢印で伸ばす。どちらも JIS / US で位置が変わらない。
+        let reel_in = is_key_down(KeyCode::W) || is_key_down(KeyCode::Up);
+        let reel_out = is_key_down(KeyCode::S) || is_key_down(KeyCode::Down);
+        let reel = reel_out as i32 as f32 - reel_in as i32 as f32;
         if game.over {
             since_over += frame_time;
             if since_over >= RETRY_DELAY && is_mouse_button_pressed(MouseButton::Left) {
@@ -58,6 +62,7 @@ async fn main() {
                 let input = WireInput {
                     aim,
                     pressed: wire_pressed,
+                    reel,
                 };
                 game.step(input, FIXED_DT);
                 wire_pressed = false;
@@ -79,7 +84,7 @@ async fn main() {
             Color::from_rgba(180, 190, 205, 255),
         );
         draw_text(
-            "click: shoot wire (click empty space to let go)",
+            "click: shoot wire (click empty space to let go)   W / S: reel in / out",
             16.0,
             screen_height() - 16.0,
             22.0,

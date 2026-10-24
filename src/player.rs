@@ -10,11 +10,9 @@ const MAX_SPEED: f32 = 900.0;
 pub const MAX_WIRE_LENGTH: f32 = 600.0;
 /// これより短いワイヤーにはしない。支点の真下で振り子が暴れないようにする。
 const MIN_WIRE_LENGTH: f32 = 40.0;
-/// 押している間、ワイヤーを自動で巻き取る速さ。
+/// ワイヤーを巻き取る・伸ばす速さ。刺さった後の長さは操作したときだけ変わる。
 /// 振り子だけでは掴み直すたびに低くなっていくので、巻き取りで高さと勢いを取り戻せるようにする。
-const REEL_SPEED: f32 = 200.0;
-/// 巻き取りはこの長さで止める。短すぎると支点の真下で回るだけになり、前へ進めない。
-const REEL_MIN_LENGTH: f32 = 140.0;
+const REEL_SPEED: f32 = 250.0;
 /// ワイヤーで敵を倒したとき、その場所へ引き寄せられる速さ。
 const PULL_SPEED: f32 = 700.0;
 /// 刺さらなかったワイヤーを描いておく時間。
@@ -27,6 +25,8 @@ pub struct WireInput {
     pub aim: Vec2,
     /// 左クリックを押した瞬間。次に回る更新で 1 回だけ真になる。
     pub pressed: bool,
+    /// ワイヤーの長さの操作。-1 で巻き取り、1 で伸ばす、0 でそのまま。
+    pub reel: f32,
 }
 
 /// 刺さっているワイヤー。
@@ -74,9 +74,8 @@ impl Player {
 
         // ワイヤーは縄として扱い、伸び切ったときだけ引き戻す（たるむことはできる）。
         if let Some(anchor) = &mut self.anchor {
-            if anchor.length > REEL_MIN_LENGTH {
-                anchor.length = (anchor.length - REEL_SPEED * dt).max(REEL_MIN_LENGTH);
-            }
+            anchor.length = (anchor.length + input.reel * REEL_SPEED * dt)
+                .clamp(MIN_WIRE_LENGTH, MAX_WIRE_LENGTH);
             let anchor = *anchor;
             let from_anchor = self.position - anchor.point;
             let distance = from_anchor.length();
@@ -183,7 +182,11 @@ mod tests {
     }
 
     fn press(aim: Vec2) -> WireInput {
-        WireInput { aim, pressed: true }
+        WireInput {
+            aim,
+            pressed: true,
+            reel: 0.0,
+        }
     }
 
     fn idle() -> WireInput {
@@ -223,8 +226,37 @@ mod tests {
         player.update(press(vec2(0.0, -1.0)), &level, DT);
         let anchor = player.anchor.unwrap();
         assert_eq!(anchor.point, vec2(0.0, 0.0));
-        // 刺さった更新の中で 1 刻み分だけ巻き取られている。
-        assert_eq!(anchor.length, 400.0 - REEL_SPEED * DT);
+        assert_eq!(anchor.length, 400.0);
+        // 操作しなければ長さは変わらない。
+        for _ in 0..60 {
+            player.update(idle(), &level, DT);
+        }
+        assert_eq!(player.anchor.unwrap().length, 400.0);
+    }
+
+    #[test]
+    fn reel_changes_wire_length_within_limits() {
+        let level = ceiling();
+        let mut player = Player::new(vec2(0.0, 400.0));
+        player.update(press(vec2(0.0, -1.0)), &level, DT);
+        let reel_in = WireInput {
+            reel: -1.0,
+            ..idle()
+        };
+        player.update(reel_in, &level, DT);
+        assert_eq!(player.anchor.unwrap().length, 400.0 - REEL_SPEED * DT);
+        for _ in 0..600 {
+            player.update(reel_in, &level, DT);
+        }
+        assert_eq!(player.anchor.unwrap().length, MIN_WIRE_LENGTH);
+        let reel_out = WireInput {
+            reel: 1.0,
+            ..idle()
+        };
+        for _ in 0..600 {
+            player.update(reel_out, &level, DT);
+        }
+        assert_eq!(player.anchor.unwrap().length, MAX_WIRE_LENGTH);
     }
 
     #[test]
