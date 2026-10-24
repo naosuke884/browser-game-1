@@ -5,8 +5,10 @@ use crate::generator::Generator;
 use crate::level::Level;
 use crate::player::{Player, WireInput, MAX_WIRE_LENGTH, PLAYER_RADIUS};
 
-/// 画面に映すワールドの高さ。y = 0 が画面の上端、y = VIEW_HEIGHT が下端。
+/// 画面に映すワールドの高さ。カメラがいちばん上にあるとき、y = 0 が画面の上端になる。
 pub const VIEW_HEIGHT: f32 = 900.0;
+/// 自機がこの高さより下へ落ちたら終わり。画面 1 枚分の高さの 2 倍まで落ちられる。
+const FALL_LIMIT_Y: f32 = VIEW_HEIGHT * 2.0;
 /// カメラは自機がカメラの左端からこの位置に来るよう左右どちらへも追いかける。
 /// 16:9 の画面で中央より少し左に置き、進む先を広く見せる。
 const FOLLOW_OFFSET: f32 = 600.0;
@@ -44,6 +46,8 @@ pub struct Game {
     pub chain: u32,
     /// カメラの左端のワールド x 座標。
     pub camera_x: f32,
+    /// カメラの上端のワールド y 座標。自機が下へ落ちると追いかけて下がる。
+    pub camera_y: f32,
     start_x: f32,
     best_x: f32,
     /// 直前の更新で受けたカーソルの位置。照準の表示に使う。
@@ -74,6 +78,7 @@ impl Game {
             kill_points: 0,
             chain: 0,
             camera_x: start.x - FOLLOW_OFFSET,
+            camera_y: 0.0,
             start_x: start.x,
             best_x: start.x,
             aim: start,
@@ -86,6 +91,9 @@ impl Game {
             return;
         }
         self.camera_x = self.player.position.x - FOLLOW_OFFSET;
+        // 縦は、自機が画面の中ほどより下へ行ったときだけ追いかける。終わる高さより下は映さない。
+        self.camera_y =
+            (self.player.position.y - VIEW_HEIGHT * 0.5).clamp(0.0, FALL_LIMIT_Y - VIEW_HEIGHT);
         let front = self.best_x - FOLLOW_OFFSET;
         self.generator.fill(&mut self.level, front + GENERATE_AHEAD);
         self.level.remove_before(front - KEEP_BEHIND);
@@ -113,7 +121,7 @@ impl Game {
             self.enemies.update(self.camera_x, player, distance, dt);
         }
 
-        let fell = self.player.position.y - PLAYER_RADIUS > VIEW_HEIGHT;
+        let fell = self.player.position.y - PLAYER_RADIUS > FALL_LIMIT_Y;
         let hit = self.enemies.any_touching(player, PLAYER_HURT_RADIUS);
         if fell || hit {
             self.over = true;
@@ -143,6 +151,14 @@ impl Game {
     }
 
     pub fn draw(&self) {
+        // 落ちたら終わる高さに、横いっぱいの帯を引いて見せる。
+        draw_rectangle(
+            self.camera_x - 4000.0,
+            FALL_LIMIT_Y,
+            12_000.0,
+            200.0,
+            Color::from_rgba(120, 40, 50, 160),
+        );
         self.level.draw();
         self.enemies.draw();
         // ワイヤーを持っていないときは、今撃てば刺さる点（敵が手前なら敵）に照準を出す。
@@ -286,7 +302,7 @@ mod tests {
             game.step(WireInput::default(), DT);
         }
         assert!(game.over);
-        assert!(game.player.position.y > VIEW_HEIGHT);
+        assert!(game.player.position.y > FALL_LIMIT_Y);
     }
 
     #[test]

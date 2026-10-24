@@ -44,7 +44,7 @@ async fn main() {
 
     loop {
         let frame_time = get_frame_time().min(MAX_FRAME_TIME);
-        let camera = view_camera(game.camera_x);
+        let camera = view_camera(game.camera_x, game.camera_y);
         let aim = camera.screen_to_world(mouse_position().into());
         wire_pressed |= is_mouse_button_pressed(MouseButton::Left);
         // ホイールを上へ回すと巻き取り、下へ回すと伸ばす。
@@ -83,7 +83,7 @@ async fn main() {
 
         clear_background(Color::from_rgba(16, 18, 24, 255));
 
-        set_camera(&view_camera(game.camera_x));
+        set_camera(&view_camera(game.camera_x, game.camera_y));
         game.draw();
 
         set_default_camera();
@@ -131,13 +131,13 @@ async fn main() {
 }
 
 /// 画面に映るワールドの範囲を映すカメラ。縦は固定で、横は縦横比で決める。
-/// ワールドは y 下向きで、y = 0 を画面の上端に映す。
+/// ワールドは y 下向きで、`camera_y` を画面の上端に映す。
 /// `Camera2D::from_display_rect` は画面に描くと上下が逆になるので使わない。
-fn view_camera(camera_x: f32) -> Camera2D {
+fn view_camera(camera_x: f32, camera_y: f32) -> Camera2D {
     let aspect = screen_width() / screen_height();
     let size = vec2(VIEW_HEIGHT * aspect, VIEW_HEIGHT);
     Camera2D {
-        target: vec2(camera_x, 0.0) + size / 2.0,
+        target: vec2(camera_x, camera_y) + size / 2.0,
         zoom: vec2(2.0 / size.x, 2.0 / size.y),
         ..Default::default()
     }
