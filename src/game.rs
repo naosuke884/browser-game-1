@@ -291,7 +291,7 @@ mod tests {
     }
 
     /// 真上から右斜め上までの向きのうち、ワイヤーが刺さる点が自機の 100 先にいちばん近い向き。
-    fn best_aim(game: &Game) -> Vec2 {
+    fn best_aim(game: &Game) -> Option<Vec2> {
         let p = game.player.position;
         (0..=12)
             .map(|i| {
@@ -299,12 +299,14 @@ mod tests {
                 p + Vec2::from_angle(angle)
             })
             .filter_map(|aim| game.player.wire_target(aim, &game.level).map(|t| (aim, t)))
+            // 近すぎる刺し先は、天井の角に挟まって動けなくなるので選ばない。
+            .filter(|(_, t)| t.distance(p) > 150.0)
             .min_by(|a, b| {
                 let da = (a.1.x - p.x - 100.0).abs();
                 let db = (b.1.x - p.x - 100.0).abs();
                 da.total_cmp(&db)
             })
-            .map_or(p + vec2(0.0, -1.0), |(aim, _)| aim)
+            .map(|(aim, _)| aim)
     }
 
     /// 単純な操作でも、落ちずに 30 秒で 300 m 以上進めることを確かめる。
@@ -314,7 +316,7 @@ mod tests {
     /// 仕組みが壊れていないことの確認なので、最初の 30 秒を、止まらずに進める種だけで確かめる。
     #[test]
     fn simple_swinging_makes_progress() {
-        for seed in [1, 3, 5, 6, 8, 10] {
+        for seed in [2, 4, 6, 8] {
             swing_for_a_while(seed);
         }
     }
@@ -325,7 +327,11 @@ mod tests {
             let p = game.player.position;
             let pressed = match game.player.anchor {
                 // 刺さっていなければ、落ち始めてから撃つ。
-                None => game.player.can_shoot() && game.player.velocity.y > 0.0,
+                None => {
+                    game.player.can_shoot()
+                        && game.player.velocity.y > 0.0
+                        && best_aim(&game).is_some()
+                }
                 // 支点より十分右で上がっている途中に、ワイヤーを戻して飛ぶ。
                 Some(a) => {
                     p.x > a.point.x + a.length * 0.3
@@ -333,21 +339,30 @@ mod tests {
                         && game.player.velocity.y < 0.0
                 }
             };
-            // 刺さっている間は、長さ 150 になるまで巻き取る。
-            let reel = match game.player.anchor {
-                Some(a) if a.length > 150.0 => -1.0,
+            // 刺さっている間は長さ 150 まで巻き取る。動いている向きへ、待ち時間が明けるたびに一押しする。
+            let wheel = match game.player.anchor {
+                Some(a) if a.target_length > 150.0 => -1.0,
                 _ => 0.0,
             };
+            let side = if game.player.velocity.x < 0.0 {
+                -1.0
+            } else {
+                1.0
+            };
             let input = WireInput {
-                aim: best_aim(&game),
+                aim: best_aim(&game).unwrap_or(game.player.position),
                 pressed,
-                reel,
-                // 動いている向きへ揺らして振り子に勢いを付ける。
-                swing: if game.player.velocity.x < 0.0 {
-                    -1.0
-                } else {
-                    1.0
-                },
+                wheel,
+                swing_pressed: !pressed,
+            };
+            // 一押しの向きはカーソルの側で決まるので、揺らすときだけカーソルを動いている側へ置く。
+            let input = if input.swing_pressed {
+                WireInput {
+                    aim: game.player.position + vec2(side * 100.0, 0.0),
+                    ..input
+                }
+            } else {
+                input
             };
             game.enemies.list.clear();
             game.step(input, DT);

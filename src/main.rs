@@ -38,22 +38,23 @@ async fn main() {
     let mut accumulator = 0.0;
     // ゲームオーバーになってからの経過時間。
     let mut since_over = 0.0;
-    // クリックは描画フレームで受け、次に回る固定刻みの更新で 1 回だけ使う。
+    // クリックとホイールは描画フレームで受け、次に回る固定刻みの更新で 1 回だけ使う。
     let mut wire_pressed = false;
+    let mut swing_pressed = false;
+    let mut wheel = 0.0;
 
     loop {
         let frame_time = get_frame_time().min(MAX_FRAME_TIME);
         let camera = view_camera(game.camera_x);
         let aim = camera.screen_to_world(mouse_position().into());
         wire_pressed |= is_mouse_button_pressed(MouseButton::Left);
-        // W か上矢印で巻き取り、S か下矢印で伸ばす。どちらも JIS / US で位置が変わらない。
-        let reel_in = is_key_down(KeyCode::W) || is_key_down(KeyCode::Up);
-        let reel_out = is_key_down(KeyCode::S) || is_key_down(KeyCode::Down);
-        let reel = reel_out as i32 as f32 - reel_in as i32 as f32;
-        // A / D で振り子を左右に揺らす。
-        let swing_left = is_key_down(KeyCode::A) || is_key_down(KeyCode::Left);
-        let swing_right = is_key_down(KeyCode::D) || is_key_down(KeyCode::Right);
-        let swing = swing_right as i32 as f32 - swing_left as i32 as f32;
+        swing_pressed |= is_mouse_button_pressed(MouseButton::Right);
+        // ホイールを上へ回すと巻き取り、下へ回すと伸ばす。
+        // 回した量は環境で桁が違うので、向きだけを 1 目盛りとして数える。
+        let (_, wheel_y) = mouse_wheel();
+        if wheel_y != 0.0 {
+            wheel -= wheel_y.signum();
+        }
         if game.over {
             since_over += frame_time;
             if since_over >= RETRY_DELAY && is_mouse_button_pressed(MouseButton::Left) {
@@ -62,17 +63,21 @@ async fn main() {
                 since_over = 0.0;
             }
             wire_pressed = false;
+            swing_pressed = false;
+            wheel = 0.0;
         } else {
             accumulator += frame_time;
             while accumulator >= FIXED_DT && !game.over {
                 let input = WireInput {
                     aim,
                     pressed: wire_pressed,
-                    reel,
-                    swing,
+                    wheel,
+                    swing_pressed,
                 };
                 game.step(input, FIXED_DT);
                 wire_pressed = false;
+                swing_pressed = false;
+                wheel = 0.0;
                 accumulator -= FIXED_DT;
             }
             if game.over && game.score() > high_score {
@@ -100,7 +105,7 @@ async fn main() {
             Color::from_rgba(180, 190, 205, 255),
         );
         draw_text(
-            "click: shoot / pull back wire   W / S: reel in / out   A / D: swing",
+            "left click: shoot / pull back wire   wheel: reel in / out   right click: swing",
             16.0,
             screen_height() - 16.0,
             22.0,
