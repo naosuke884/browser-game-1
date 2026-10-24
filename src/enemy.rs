@@ -11,7 +11,7 @@ const FLOATER_SWAY_RATE: f32 = 1.5;
 const CHARGER_AIM_TIME: f32 = 0.8;
 const CHARGER_SPEED: f32 = 700.0;
 /// 敵を出す位置の、カメラ左端からの距離。16:9 の画面の右端より少し外。
-const SPAWN_OFFSET: f32 = 1700.0;
+const SPAWN_OFFSET: f32 = 3500.0;
 /// カメラ左端よりこれだけ左へ流れた敵は消す。
 const DISCARD_BEHIND: f32 = 200.0;
 /// この距離（m）を過ぎるまで敵を出さない。
@@ -206,7 +206,7 @@ mod tests {
         let mut enemies = Enemies::new(1);
         enemies.update(1000.0, Vec2::ZERO, START_DISTANCE, DT);
         assert_eq!(enemies.list.len(), 1);
-        assert!(enemies.list[0].position.x > 1000.0 + 1600.0);
+        assert!(enemies.list[0].position.x > 1000.0 + 3300.0);
     }
 
     #[test]
