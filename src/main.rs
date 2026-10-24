@@ -50,6 +50,10 @@ async fn main() {
         let reel_in = is_key_down(KeyCode::W) || is_key_down(KeyCode::Up);
         let reel_out = is_key_down(KeyCode::S) || is_key_down(KeyCode::Down);
         let reel = reel_out as i32 as f32 - reel_in as i32 as f32;
+        // A / D で振り子を左右に揺らす。
+        let swing_left = is_key_down(KeyCode::A) || is_key_down(KeyCode::Left);
+        let swing_right = is_key_down(KeyCode::D) || is_key_down(KeyCode::Right);
+        let swing = swing_right as i32 as f32 - swing_left as i32 as f32;
         if game.over {
             since_over += frame_time;
             if since_over >= RETRY_DELAY && is_mouse_button_pressed(MouseButton::Left) {
@@ -65,6 +69,7 @@ async fn main() {
                     aim,
                     pressed: wire_pressed,
                     reel,
+                    swing,
                 };
                 game.step(input, FIXED_DT);
                 wire_pressed = false;
@@ -95,7 +100,7 @@ async fn main() {
             Color::from_rgba(180, 190, 205, 255),
         );
         draw_text(
-            "click: shoot wire (click empty space to let go)   W / S: reel in / out",
+            "click: shoot / pull back wire   W / S: reel in / out   A / D: swing",
             16.0,
             screen_height() - 16.0,
             22.0,

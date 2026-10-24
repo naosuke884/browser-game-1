@@ -15,8 +15,10 @@ const MIN_WIRE_LENGTH: f32 = 40.0;
 const REEL_SPEED: f32 = 250.0;
 /// ワイヤーで敵を倒したとき、その場所へ引き寄せられる速さ。
 const PULL_SPEED: f32 = 700.0;
-/// 刺さらなかったワイヤーを描いておく時間。
-const MISS_SHOW_TIME: f32 = 0.12;
+/// 外したワイヤーが手元へ戻るまでの時間。戻るまでは次を撃てない。
+const RETRACT_TIME: f32 = 0.15;
+/// A / D で振り子を揺らすときに、振れる向きへ足す加速度。
+const SWING_ACCEL: f32 = 900.0;
 
 /// ワイヤーの操作。
 #[derive(Clone, Copy, Default)]
@@ -27,6 +29,8 @@ pub struct WireInput {
     pub pressed: bool,
     /// ワイヤーの長さの操作。-1 で巻き取り、1 で伸ばす、0 でそのまま。
     pub reel: f32,
+    /// 振り子を揺らす向き。-1 で左、1 で右、0 で揺らさない。
+    pub swing: f32,
 }
 
 /// 刺さっているワイヤー。
@@ -40,8 +44,8 @@ pub struct Player {
     pub position: Vec2,
     pub velocity: Vec2,
     pub anchor: Option<Anchor>,
-    /// 刺さらなかったワイヤーの先端と、表示の残り時間。
-    miss: Option<(Vec2, f32)>,
+    /// 手元へ戻っている途中のワイヤーの、戻り始めた位置と残り時間。
+    retract: Option<(Vec2, f32)>,
 }
 
 impl Player {
@@ -50,21 +54,29 @@ impl Player {
             position,
             velocity: Vec2::ZERO,
             anchor: None,
-            miss: None,
+            retract: None,
         }
     }
 
+    /// ワイヤーが手元にあり、撃てる状態か。
+    pub fn can_shoot(&self) -> bool {
+        self.anchor.is_none() && self.retract.is_none()
+    }
+
     pub fn update(&mut self, input: WireInput, level: &Level, dt: f32) {
-        // クリックするたびに今のワイヤーを外して撃ち直す。何もない所へ撃てば外れるだけになり、
-        // そのときの速さと向きのまま飛ぶ。
-        if input.pressed {
-            self.anchor = None;
-            self.shoot_wire(input.aim, level);
-        }
-        if let Some((_, left)) = &mut self.miss {
+        // ワイヤーは「撃って刺す → クリックで手元へ戻す → また撃つ」を繰り返す。
+        // 戻すとそのときの速さと向きのまま飛ぶ。
+        if let Some((_, left)) = &mut self.retract {
             *left -= dt;
             if *left <= 0.0 {
-                self.miss = None;
+                self.retract = None;
+            }
+        }
+        if input.pressed {
+            if let Some(anchor) = self.anchor.take() {
+                self.retract = Some((anchor.point, RETRACT_TIME));
+            } else if self.can_shoot() {
+                self.shoot_wire(input.aim, level);
             }
         }
 
@@ -79,6 +91,14 @@ impl Player {
             let anchor = *anchor;
             let from_anchor = self.position - anchor.point;
             let distance = from_anchor.length();
+            // 振れる向き（ワイヤーに垂直な向きのうち、横成分が入力と同じ側）へ加速して揺らす。
+            if input.swing != 0.0 && distance > 0.0 {
+                let mut tangent = from_anchor.perp() / distance;
+                if tangent.x * input.swing < 0.0 {
+                    tangent = -tangent;
+                }
+                self.velocity += tangent * SWING_ACCEL * dt;
+            }
             if distance > anchor.length {
                 let outward = from_anchor / distance;
                 self.position = anchor.point + outward * anchor.length;
@@ -99,7 +119,7 @@ impl Player {
         }
     }
 
-    fn shoot_wire(&mut self, aim: Vec2, level: &Level) {
+    pub fn shoot_wire(&mut self, aim: Vec2, level: &Level) {
         let dir = (aim - self.position).normalize_or_zero();
         if dir == Vec2::ZERO {
             return;
@@ -110,10 +130,10 @@ impl Player {
                     point,
                     length: point.distance(self.position).max(MIN_WIRE_LENGTH),
                 });
-                self.miss = None;
             }
             None => {
-                self.miss = Some((self.position + dir * MAX_WIRE_LENGTH, MISS_SHOW_TIME));
+                // 届かなければ伸び切ったところから手元へ戻る。
+                self.retract = Some((self.position + dir * MAX_WIRE_LENGTH, RETRACT_TIME));
             }
         }
     }
@@ -121,7 +141,7 @@ impl Player {
     /// ワイヤーで敵を倒したときに呼ぶ。ワイヤーは外れ、`point` へ向かう勢いが付く。
     pub fn pull_toward(&mut self, point: Vec2) {
         self.anchor = None;
-        self.miss = None;
+        self.retract = None;
         let dir = (point - self.position).normalize_or_zero();
         self.velocity = dir * PULL_SPEED;
     }
@@ -145,16 +165,18 @@ impl Player {
             );
             draw_circle(anchor.point.x, anchor.point.y, 4.0, wire_color);
         }
-        if let Some((tip, left)) = self.miss {
-            let alpha = (left / MISS_SHOW_TIME).clamp(0.0, 1.0) * 0.6;
+        if let Some((from, left)) = self.retract {
+            // 戻り始めた位置から手元へ縮んでいくように描く。
+            let t = (left / RETRACT_TIME).clamp(0.0, 1.0);
+            let tip = self.position + (from - self.position) * t;
             draw_line(
                 self.position.x,
                 self.position.y,
                 tip.x,
                 tip.y,
-                1.0,
+                1.5,
                 Color {
-                    a: alpha,
+                    a: 0.7,
                     ..wire_color
                 },
             );
@@ -186,6 +208,7 @@ mod tests {
             aim,
             pressed: true,
             reel: 0.0,
+            swing: 0.0,
         }
     }
 
@@ -286,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn clicking_empty_space_releases_and_keeps_velocity() {
+    fn clicking_while_attached_pulls_wire_back_and_keeps_velocity() {
         let level = ceiling();
         let mut player = Player::new(vec2(-300.0, 300.0));
         player.update(press(vec2(0.0, 0.0)), &level, DT);
@@ -294,21 +317,51 @@ mod tests {
             player.update(idle(), &level, DT);
         }
         let before = player.velocity;
-        // 真下へ撃つと何にも刺さらず、ワイヤーが外れるだけになる。
-        let below = player.position + vec2(0.0, 100.0);
-        player.update(press(below), &level, DT);
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
         assert!(player.anchor.is_none());
         assert_eq!(player.velocity, before + vec2(0.0, GRAVITY * DT));
     }
 
     #[test]
-    fn clicking_again_switches_anchor() {
+    fn cannot_shoot_until_wire_is_back() {
         let level = ceiling();
         let mut player = Player::new(vec2(0.0, 300.0));
-        player.update(press(vec2(-100.0, 0.0)), &level, DT);
-        let first = player.anchor.unwrap().point;
-        player.update(press(player.position + vec2(100.0, -300.0)), &level, DT);
-        let second = player.anchor.unwrap().point;
-        assert!(second.x > first.x);
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
+        assert!(!player.can_shoot());
+        // 戻っている途中のクリックは無視される。
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
+        assert!(player.anchor.is_none());
+        for _ in 0..(RETRACT_TIME / DT) as usize + 1 {
+            player.update(idle(), &level, DT);
+        }
+        assert!(player.can_shoot());
+        player.update(press(player.position + vec2(0.0, -1.0)), &level, DT);
+        assert!(player.anchor.is_some());
+    }
+
+    #[test]
+    fn swing_input_pushes_pendulum_sideways() {
+        let level = ceiling();
+        let swing = |dir: f32| WireInput {
+            swing: dir,
+            ..idle()
+        };
+        // 支点の真下で止まっている状態から、右へ揺らす。
+        let mut player = Player::new(vec2(0.0, 300.0));
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
+        for _ in 0..30 {
+            player.update(swing(1.0), &level, DT);
+        }
+        assert!(player.velocity.x > 0.0);
+        let anchor = player.anchor.unwrap();
+        assert!(player.position.distance(anchor.point) <= anchor.length + 1e-3);
+
+        let mut player = Player::new(vec2(0.0, 300.0));
+        player.update(press(vec2(0.0, 0.0)), &level, DT);
+        for _ in 0..30 {
+            player.update(swing(-1.0), &level, DT);
+        }
+        assert!(player.velocity.x < 0.0);
     }
 }
