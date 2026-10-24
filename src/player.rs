@@ -16,6 +16,15 @@ const WHEEL_STEP: f32 = 40.0;
 const REEL_SPEED: f32 = 800.0;
 /// ワイヤーで敵を倒したとき、その場所へ引き寄せられる速さ。
 const PULL_SPEED: f32 = 700.0;
+/// ワイヤーの伸びにくさ（ばね定数、自機の重さを 1 とした値）。
+/// 小さいほどよく伸びる。ぶら下がって止まっているとき、重力で GRAVITY / この値 だけ伸びる。
+const WIRE_STIFFNESS: f32 = 150.0;
+/// 伸び縮みの揺れを収める強さ。0 だとびよんびよんと揺れ続ける。
+const WIRE_DAMPING: f32 = 4.0;
+/// ワイヤーが伸びられる上限（長さに対する比）。速すぎるときに伸び切って飛んでいかないようにする。
+const MAX_STRETCH: f32 = 1.4;
+/// 画面に描くワイヤーの節の数。節どうしをつなぎ、しなって見えるようにする。
+const ROPE_POINTS: usize = 20;
 /// 外したワイヤーが手元へ戻るまでの時間。戻るまでは次を撃てない。
 const RETRACT_TIME: f32 = 0.15;
 /// 右クリックで振り子を一押ししたときに、振れる向きへ足す速さ。
@@ -53,6 +62,9 @@ pub struct Player {
     retract: Option<(Vec2, f32)>,
     /// 次に振り子を一押しできるまでの時間。
     swing_cooldown: f32,
+    /// 描画用のワイヤーの節。支点から自機まで並ぶ。見た目だけで、動きには影響しない。
+    rope: Vec<Vec2>,
+    rope_prev: Vec<Vec2>,
 }
 
 impl Player {
@@ -63,6 +75,8 @@ impl Player {
             anchor: None,
             retract: None,
             swing_cooldown: 0.0,
+            rope: Vec::new(),
+            rope_prev: Vec::new(),
         }
     }
 
@@ -100,12 +114,11 @@ impl Player {
             }
         }
 
-        if !self.swing_on_wire(dt) {
-            self.velocity.y += GRAVITY * dt;
-            self.velocity = self.velocity.clamp_length_max(MAX_SPEED);
-            self.position += self.velocity * dt;
-            self.catch_on_wire();
-        }
+        self.velocity.y += GRAVITY * dt;
+        self.pull_by_wire(dt);
+        self.velocity = self.velocity.clamp_length_max(MAX_SPEED);
+        self.position += self.velocity * dt;
+        self.limit_stretch();
 
         // 地形に当たっても死なず、めり込む向きの速度だけ消して滑らせる。
         if let Some(contact) = level.push_out(self.position, PLAYER_RADIUS) {
@@ -115,66 +128,101 @@ impl Player {
                 self.velocity -= contact.normal * into;
             }
         }
+        self.update_rope(dt);
     }
 
-    /// ワイヤーが張っていれば、支点まわりの振り子として 1 刻み進めて真を返す。
-    /// たるんでいる（縄が自機を引っ張っていない）ときは何もせず偽を返す。
-    ///
-    /// 位置を動かしてから円の上へ引き戻すやり方だと、引き戻すたびに勢いが少しずつ削れる。
-    /// 張っている間は角度と、ワイヤーに垂直な向きの速さだけで動かし、勢いを保つ。
-    fn swing_on_wire(&mut self, dt: f32) -> bool {
+    /// ワイヤーをばねとして扱い、長さより離れているときだけ支点へ引っ張る（押し返しはしない）。
+    /// 少し伸びて、引っ張られた後に反動で戻るので、しなるような動きになる。
+    /// 支点へ向かう力だけなので、巻き取ると角運動量を保ったまま速く回る。
+    fn pull_by_wire(&mut self, dt: f32) {
         let Some(anchor) = &mut self.anchor else {
-            return false;
+            return;
         };
         // 長さを目標へ近づける。伸ばすときは縄が繰り出されるだけなので、たるんで自由に落ちる。
-        let before = anchor.length;
         let step = REEL_SPEED * dt;
         anchor.length += (anchor.target_length - anchor.length).clamp(-step, step);
         let offset = self.position - anchor.point;
         let distance = offset.length();
-        if distance < anchor.length - 0.5 || distance == 0.0 {
-            return false;
+        if distance <= anchor.length {
+            return;
         }
         let outward = offset / distance;
-        let tangent = outward.perp();
-        let mut along = self.velocity.dot(tangent);
-        // 縄が引っ張る力（張力）が負になる、つまり遠心力と重力の外向き成分で支え切れないときはたるむ。
-        let tension = along * along / anchor.length + GRAVITY * outward.y;
-        if tension < 0.0 {
-            return false;
-        }
-
-        // 張ったまま巻き取ったら、支点まわりの角運動量を保つよう横向きの速さを上げる
-        // （フィギュアスケートのスピンで腕を縮めると速く回るのと同じ）。
-        if anchor.length < before {
-            along *= before / anchor.length;
-        }
-
-        along += GRAVITY * tangent.y * dt;
-        along = along.clamp(-MAX_SPEED, MAX_SPEED);
-        let turned = Vec2::from_angle(along / anchor.length * dt).rotate(outward);
-        self.position = anchor.point + turned * anchor.length;
-        self.velocity = turned.perp() * along;
-        true
+        let stretch = distance - anchor.length;
+        let moving_away = self.velocity.dot(outward);
+        let pull = (WIRE_STIFFNESS * stretch + WIRE_DAMPING * moving_away).max(0.0);
+        self.velocity -= outward * pull * dt;
     }
 
-    /// 自由に動いた後、ワイヤーの長さより離れていたら円の上へ引き戻し、離れる向きの速さを消す。
-    /// たるんでいたワイヤーが張った瞬間にあたる。
-    fn catch_on_wire(&mut self) {
-        let Some(anchor) = &mut self.anchor else {
+    /// 伸び過ぎたワイヤーを上限で止める。
+    fn limit_stretch(&mut self) {
+        let Some(anchor) = self.anchor else {
             return;
         };
         let offset = self.position - anchor.point;
         let distance = offset.length();
-        if distance <= anchor.length || distance == 0.0 {
+        let limit = anchor.length * MAX_STRETCH;
+        if distance <= limit {
             return;
         }
         let outward = offset / distance;
-        self.position = anchor.point + outward * anchor.length;
+        self.position = anchor.point + outward * limit;
         let away = self.velocity.dot(outward);
         if away > 0.0 {
             self.velocity -= outward * away;
         }
+    }
+
+    /// 描画用のワイヤーの節を 1 刻み動かす。節は重力で垂れ、動きに遅れて付いてくるので、
+    /// たるむと垂れ下がり、振ると後ろへしなる。張っているときはまっすぐに伸びる。
+    fn update_rope(&mut self, dt: f32) {
+        let Some(anchor) = self.anchor else {
+            self.rope.clear();
+            return;
+        };
+        if self.rope.len() != ROPE_POINTS {
+            self.rope = (0..ROPE_POINTS)
+                .map(|i| {
+                    anchor
+                        .point
+                        .lerp(self.position, i as f32 / (ROPE_POINTS - 1) as f32)
+                })
+                .collect();
+            self.rope_prev = self.rope.clone();
+        }
+        let gravity = vec2(0.0, GRAVITY) * dt * dt;
+        for i in 1..ROPE_POINTS - 1 {
+            let current = self.rope[i];
+            let moved = (current - self.rope_prev[i]) * 0.98;
+            self.rope_prev[i] = current;
+            self.rope[i] = current + moved + gravity;
+        }
+        let segment = anchor.length / (ROPE_POINTS - 1) as f32;
+        let last = ROPE_POINTS - 1;
+        for _ in 0..12 {
+            self.rope[0] = anchor.point;
+            self.rope[last] = self.position;
+            for i in 0..last {
+                let delta = self.rope[i + 1] - self.rope[i];
+                let length = delta.length();
+                if length <= segment || length == 0.0 {
+                    continue;
+                }
+                // 縄なので縮むことはできても、節の間隔より伸びることはできない。
+                let correction = delta * ((length - segment) / length);
+                let (a_pinned, b_pinned) = (i == 0, i + 1 == last);
+                match (a_pinned, b_pinned) {
+                    (true, true) => {}
+                    (true, false) => self.rope[i + 1] -= correction,
+                    (false, true) => self.rope[i] += correction,
+                    (false, false) => {
+                        self.rope[i] += correction * 0.5;
+                        self.rope[i + 1] -= correction * 0.5;
+                    }
+                }
+            }
+        }
+        self.rope[0] = anchor.point;
+        self.rope[last] = self.position;
     }
 
     /// 振り子を一押しする向き。ワイヤーに垂直な向きのうち、カーソルのある側（左右）。
@@ -206,6 +254,7 @@ impl Player {
                     length,
                     target_length: length,
                 });
+                self.rope.clear();
             }
             None => {
                 // 届かなければ伸び切ったところから手元へ戻る。
@@ -231,14 +280,20 @@ impl Player {
     pub fn draw(&self) {
         let wire_color = Color::from_rgba(255, 200, 80, 255);
         if let Some(anchor) = self.anchor {
-            draw_line(
-                self.position.x,
-                self.position.y,
-                anchor.point.x,
-                anchor.point.y,
-                2.0,
-                wire_color,
-            );
+            if self.rope.len() == ROPE_POINTS {
+                for pair in self.rope.windows(2) {
+                    draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, 2.0, wire_color);
+                }
+            } else {
+                draw_line(
+                    self.position.x,
+                    self.position.y,
+                    anchor.point.x,
+                    anchor.point.y,
+                    2.0,
+                    wire_color,
+                );
+            }
             draw_circle(anchor.point.x, anchor.point.y, 4.0, wire_color);
         }
         if let Some((from, left)) = self.retract {
@@ -396,6 +451,8 @@ mod tests {
             anchor: player.anchor,
             retract: None,
             swing_cooldown: 0.0,
+            rope: Vec::new(),
+            rope_prev: Vec::new(),
         };
         let wheel_in = WireInput {
             wheel: -3.0,
@@ -411,6 +468,57 @@ mod tests {
     }
 
     #[test]
+    fn wire_stretches_and_bounces_back() {
+        // 地形のない所で、支点の真下、ワイヤーの長さちょうどの位置から放す。
+        let level = Level::default();
+        let mut player = Player::new(vec2(0.0, 300.0));
+        player.anchor = Some(Anchor {
+            point: Vec2::ZERO,
+            length: 300.0,
+            target_length: 300.0,
+        });
+        let mut lowest = 0.0_f32;
+        let mut bounced = false;
+        for _ in 0..120 {
+            player.update(idle(), &level, DT);
+            lowest = lowest.max(player.position.y);
+            bounced |= player.velocity.y < 0.0;
+        }
+        // 重力で伸び、反動で上へ戻る。
+        assert!(lowest > 300.0 + GRAVITY / WIRE_STIFFNESS);
+        assert!(bounced);
+        // 揺れは収まり、重力とつり合う長さで止まる。
+        for _ in 0..1200 {
+            player.update(idle(), &level, DT);
+        }
+        let rest = 300.0 + GRAVITY / WIRE_STIFFNESS;
+        assert!(
+            (player.position.y - rest).abs() < 1.0,
+            "{}",
+            player.position.y
+        );
+    }
+
+    #[test]
+    fn rope_sags_when_slack() {
+        // ワイヤーより近くにいてたるんでいると、描画用の節は 2 点を結ぶ線より下に垂れる。
+        let level = Level::default();
+        let mut player = Player::new(vec2(100.0, 0.0));
+        player.anchor = Some(Anchor {
+            point: Vec2::ZERO,
+            length: 300.0,
+            target_length: 300.0,
+        });
+        for _ in 0..120 {
+            player.position = vec2(100.0, 0.0);
+            player.velocity = Vec2::ZERO;
+            player.update(idle(), &level, DT);
+        }
+        let middle = player.rope[ROPE_POINTS / 2];
+        assert!(middle.y > 50.0, "{middle}");
+    }
+
+    #[test]
     fn wire_misses_out_of_range() {
         let level = ceiling();
         let mut player = Player::new(vec2(0.0, MAX_WIRE_LENGTH + 50.0));
@@ -423,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn swinging_keeps_wire_length_and_moves_sideways() {
+    fn swinging_stays_within_stretch_limit_and_moves_sideways() {
         let level = ceiling();
         // 支点の左下から振り出す。
         let mut player = Player::new(vec2(-300.0, 300.0));
@@ -431,7 +539,8 @@ mod tests {
         let anchor = player.anchor.unwrap();
         for _ in 0..60 {
             player.update(idle(), &level, DT);
-            assert!(player.position.distance(anchor.point) <= anchor.length + 1e-3);
+            // ばねなので少し伸びるが、上限より伸びることはない。
+            assert!(player.position.distance(anchor.point) <= anchor.length * MAX_STRETCH + 1e-3);
         }
         assert!(player.velocity.x > 0.0);
     }

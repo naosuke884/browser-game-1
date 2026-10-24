@@ -326,7 +326,7 @@ mod tests {
     /// 仕組みが壊れていないことの確認なので、最初の 30 秒を、止まらずに進める種だけで確かめる。
     #[test]
     fn simple_swinging_makes_progress() {
-        for seed in [2, 4, 5, 6, 8, 10] {
+        for seed in [1, 2, 3, 4, 6, 7, 8, 10] {
             swing_for_a_while(seed);
         }
     }
