@@ -1,5 +1,9 @@
 # browser-game-1
 
+[![CI](https://github.com/naosuke884/browser-game-1/actions/workflows/ci.yml/badge.svg)](https://github.com/naosuke884/browser-game-1/actions/workflows/ci.yml)
+
+push と PR ごとに、書式・lint・テスト・WASM ビルドを GitHub Actions で確かめています（`.github/workflows/ci.yml`）。
+
 Rust + [macroquad](https://github.com/not-fl3/macroquad) で作る、ブラウザ向け 2D アクションの土台です。
 
 開発中はネイティブで実行します。WASM ビルドは公開するときだけ行います。macroquad の WASM は `wasm-bindgen` ではなく、同梱している専用 JS ローダー（`web/mq_js_bundle.js`）で動かします。
