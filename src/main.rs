@@ -1,4 +1,17 @@
+mod arena;
+mod ship;
+
 use macroquad::prelude::*;
+
+use arena::Arena;
+use ship::Ship;
+
+/// 更新は固定の刻みで回し、画面のリフレッシュレートで手触りが変わらないようにする。
+const FIXED_DT: f32 = 1.0 / 120.0;
+/// 処理落ちしたときに 1 フレームで追いつく上限。これを超えた分は捨ててゲームを遅らせる。
+const MAX_FRAME_TIME: f32 = 0.1;
+/// 画面に映すワールドの高さ。ウィンドウの大きさで見える範囲が変わりすぎないよう固定し、幅は縦横比で決める。
+const VIEW_HEIGHT: f32 = 900.0;
 
 fn window_conf() -> Conf {
     Conf {
@@ -6,7 +19,7 @@ fn window_conf() -> Conf {
         window_width: 1280,
         window_height: 720,
         // ネイティブウィンドウのドラッグリサイズを受け付ける。
-        // 毎フレーム screen_width / screen_height で配置するので、WASM 側は
+        // 毎フレーム screen_width / screen_height でカメラを作り直すので、WASM 側は
         // キャンバスの CSS サイズ（ブラウザのウィンドウ）にも同じ描画で追従する。
         window_resizable: true,
         high_dpi: true,
@@ -16,31 +29,34 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    let arena = Arena::new(2400.0, 1600.0);
+    let mut ship = Ship::new(Vec2::ZERO);
+    let mut accumulator = 0.0;
+
     loop {
-        let width = screen_width();
-        let height = screen_height();
+        // カメラは機体を常に画面中央に置く。操縦の目標は前のフレームの位置で作ったカメラで変換する。
+        let camera = view_camera(ship.position);
+        let aim = camera.screen_to_world(mouse_position().into());
+
+        accumulator += get_frame_time().min(MAX_FRAME_TIME);
+        while accumulator >= FIXED_DT {
+            ship.update(aim, &arena, FIXED_DT);
+            accumulator -= FIXED_DT;
+        }
 
         clear_background(Color::from_rgba(16, 18, 24, 255));
 
-        let margin = 24.0;
-        if width > margin * 2.0 && height > margin * 2.0 {
-            draw_rectangle_lines(
-                margin,
-                margin,
-                width - margin * 2.0,
-                height - margin * 2.0,
-                2.0,
-                Color::from_rgba(120, 180, 255, 255),
-            );
-        }
+        set_camera(&view_camera(ship.position));
+        arena.draw();
+        ship.draw_dead_zone();
+        ship.draw();
 
-        let size_label = format!("{width:.0} x {height:.0}");
-        draw_centered_text(&size_label, width / 2.0, height / 2.0, 36.0, WHITE);
-        draw_centered_text(
-            "browser-game-1",
-            width / 2.0,
-            height / 2.0 - 48.0,
-            28.0,
+        set_default_camera();
+        draw_text(
+            format!("speed {:.0}", ship.velocity.length()),
+            16.0,
+            32.0,
+            24.0,
             Color::from_rgba(180, 190, 205, 255),
         );
 
@@ -48,13 +64,13 @@ async fn main() {
     }
 }
 
-fn draw_centered_text(text: &str, center_x: f32, baseline_y: f32, font_size: f32, color: Color) {
-    let dimensions = measure_text(text, None, font_size as u16, 1.0);
-    draw_text(
-        text,
-        center_x - dimensions.width / 2.0,
-        baseline_y,
-        font_size,
-        color,
-    );
+fn view_camera(center: Vec2) -> Camera2D {
+    let aspect = screen_width() / screen_height();
+    let size = vec2(VIEW_HEIGHT * aspect, VIEW_HEIGHT);
+    Camera2D::from_display_rect(Rect::new(
+        center.x - size.x / 2.0,
+        center.y - size.y / 2.0,
+        size.x,
+        size.y,
+    ))
 }
