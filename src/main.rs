@@ -1,3 +1,4 @@
+mod enemy;
 mod game;
 mod generator;
 mod level;
@@ -73,7 +74,7 @@ async fn main() {
 
         set_default_camera();
         draw_text(
-            format!("{:.0} m", game.distance()),
+            format!("{:.0} m   kills {}", game.distance(), game.kills),
             16.0,
             32.0,
             28.0,
@@ -111,7 +112,7 @@ fn draw_game_over(game: &Game, since_over: f32) {
     let center = vec2(screen_width(), screen_height()) / 2.0;
     draw_centered_text("GAME OVER", center.x, center.y - 20.0, 56.0, WHITE);
     draw_centered_text(
-        &format!("{:.0} m", game.distance()),
+        &format!("{:.0} m   kills {}", game.distance(), game.kills),
         center.x,
         center.y + 24.0,
         28.0,

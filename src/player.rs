@@ -15,6 +15,8 @@ const MIN_WIRE_LENGTH: f32 = 40.0;
 const REEL_SPEED: f32 = 100.0;
 /// 巻き取りはこの長さで止める。短すぎると支点の真下で回るだけになり、前へ進めない。
 const REEL_MIN_LENGTH: f32 = 140.0;
+/// ワイヤーで敵を倒したとき、その場所へ引き寄せられる速さ。
+const PULL_SPEED: f32 = 700.0;
 /// 刺さらなかったワイヤーを描いておく時間。
 const MISS_SHOW_TIME: f32 = 0.12;
 
@@ -117,6 +119,14 @@ impl Player {
                 self.miss = Some((self.position + dir * MAX_WIRE_LENGTH, MISS_SHOW_TIME));
             }
         }
+    }
+
+    /// ワイヤーで敵を倒したときに呼ぶ。ワイヤーは外れ、`point` へ向かう勢いが付く。
+    pub fn pull_toward(&mut self, point: Vec2) {
+        self.anchor = None;
+        self.miss = None;
+        let dir = (point - self.position).normalize_or_zero();
+        self.velocity = dir * PULL_SPEED;
     }
 
     /// 今クリックしたらワイヤーが刺さる点。照準の表示に使う。

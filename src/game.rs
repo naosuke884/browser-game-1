@@ -1,8 +1,9 @@
 use macroquad::prelude::*;
 
+use crate::enemy::Enemies;
 use crate::generator::Generator;
 use crate::level::Level;
-use crate::player::{Player, WireInput, PLAYER_RADIUS};
+use crate::player::{Player, WireInput, MAX_WIRE_LENGTH, PLAYER_RADIUS};
 
 /// 画面に映すワールドの高さ。y = 0 が画面の上端、y = VIEW_HEIGHT が下端。
 pub const VIEW_HEIGHT: f32 = 900.0;
@@ -17,6 +18,8 @@ const GENERATE_AHEAD: f32 = 4000.0;
 const DISCARD_BEHIND: f32 = 200.0;
 /// 開始時の自機の、カメラ左端からの位置。
 const START_OFFSET: Vec2 = vec2(300.0, 450.0);
+/// 敵との当たり判定は見た目より小さくし、かすっただけでは終わらないようにする。
+const PLAYER_HURT_RADIUS: f32 = PLAYER_RADIUS * 0.7;
 /// 画面の距離表示の単位。ワールドの 10 を 1 m と数える。
 const UNITS_PER_METER: f32 = 10.0;
 
@@ -25,6 +28,9 @@ pub struct Game {
     pub level: Level,
     generator: Generator,
     pub player: Player,
+    pub enemies: Enemies,
+    /// ワイヤーで倒した敵の数。
+    pub kills: u32,
     /// カメラの左端のワールド x 座標。
     pub camera_x: f32,
     start_x: f32,
@@ -36,6 +42,11 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Self {
+        // 毎回違う敵の出方にするため、起動時刻から種を作る。
+        Self::with_seed((macroquad::miniquad::date::now() * 1000.0) as u64)
+    }
+
+    pub fn with_seed(seed: u64) -> Self {
         let mut level = Level::default();
         let mut generator = Generator::new(-DISCARD_BEHIND);
         generator.fill(&mut level, GENERATE_AHEAD);
@@ -44,6 +55,8 @@ impl Game {
             level,
             generator,
             player: Player::new(start),
+            enemies: Enemies::new(seed),
+            kills: 0,
             camera_x: 0.0,
             start_x: start.x,
             best_x: start.x,
@@ -52,7 +65,7 @@ impl Game {
         }
     }
 
-    pub fn step(&mut self, input: WireInput, dt: f32) {
+    pub fn step(&mut self, mut input: WireInput, dt: f32) {
         if self.over {
             return;
         }
@@ -63,14 +76,40 @@ impl Game {
         self.level.remove_before(self.camera_x - DISCARD_BEHIND);
 
         self.aim = input.aim;
+        // 撃ったワイヤーが地形より手前の敵に当たったら、その敵を倒して引き寄せられる。
+        if input.pressed && input.held && self.player.anchor.is_none() {
+            if let Some((index, point)) = self.enemy_target(input.aim) {
+                self.enemies.list.swap_remove(index);
+                self.kills += 1;
+                self.player.pull_toward(point);
+                input.pressed = false;
+            }
+        }
         self.player.update(input, &self.level, dt);
         self.best_x = self.best_x.max(self.player.position.x);
+        let player = self.player.position;
+        let distance = self.distance();
+        self.enemies
+            .update(self.camera_x, SCROLL_SPEED, player, distance, dt);
 
         let pushed_off = self.player.position.x < self.camera_x;
         let fell = self.player.position.y - PLAYER_RADIUS > VIEW_HEIGHT;
-        if pushed_off || fell {
+        let hit = self.enemies.any_touching(player, PLAYER_HURT_RADIUS);
+        if pushed_off || fell || hit {
             self.over = true;
         }
+    }
+
+    /// `aim` の方向へ撃ったとき、地形より手前で当たる敵の番号と当たる点。
+    fn enemy_target(&self, aim: Vec2) -> Option<(usize, Vec2)> {
+        let origin = self.player.position;
+        let dir = (aim - origin).normalize_or_zero();
+        let (index, t) = self.enemies.raycast(origin, dir, MAX_WIRE_LENGTH)?;
+        let blocked = self
+            .level
+            .raycast(origin, dir, t)
+            .is_some_and(|p| p.distance(origin) < t);
+        (!blocked).then(|| (index, origin + dir * t))
     }
 
     /// 開始位置から最も右へ進んだ距離（m）。
@@ -80,9 +119,14 @@ impl Game {
 
     pub fn draw(&self) {
         self.level.draw();
-        // ワイヤーを持っていないときは、今撃てば刺さる点に照準を出す。
+        self.enemies.draw();
+        // ワイヤーを持っていないときは、今撃てば刺さる点（敵が手前なら敵）に照準を出す。
         if self.player.anchor.is_none() {
-            if let Some(target) = self.player.wire_target(self.aim, &self.level) {
+            let target = match self.enemy_target(self.aim) {
+                Some((_, point)) => Some(point),
+                None => self.player.wire_target(self.aim, &self.level),
+            };
+            if let Some(target) = target {
                 draw_circle_lines(
                     target.x,
                     target.y,
@@ -107,6 +151,40 @@ mod tests {
         let mut game = Game::new();
         game.step(WireInput::default(), 1.0);
         assert_eq!(game.camera_x, SCROLL_SPEED);
+    }
+
+    #[test]
+    fn wire_kills_enemy_and_pulls_player() {
+        let mut game = Game::with_seed(1);
+        let p = game.player.position;
+        let mut enemies = Enemies::new(1);
+        enemies.update(game.camera_x, SCROLL_SPEED, p, 100.0, DT);
+        let mut enemy = enemies.list.pop().unwrap();
+        enemy.position = p + vec2(300.0, 0.0);
+        game.enemies.list.push(enemy);
+        let input = WireInput {
+            aim: p + vec2(300.0, 0.0),
+            pressed: true,
+            held: true,
+        };
+        game.step(input, DT);
+        assert_eq!(game.kills, 1);
+        assert!(game.enemies.list.is_empty());
+        assert!(game.player.anchor.is_none());
+        assert!(game.player.velocity.x > 600.0);
+    }
+
+    #[test]
+    fn touching_enemy_ends_the_game() {
+        let mut game = Game::with_seed(1);
+        let p = game.player.position;
+        let mut enemies = Enemies::new(1);
+        enemies.update(game.camera_x, SCROLL_SPEED, p, 100.0, DT);
+        let mut enemy = enemies.list.pop().unwrap();
+        enemy.position = p;
+        game.enemies.list.push(enemy);
+        game.step(WireInput::default(), DT);
+        assert!(game.over);
     }
 
     #[test]
@@ -138,9 +216,10 @@ mod tests {
 
     /// 単純な操作でもスクロールに置いていかれずに進み続けられることを確かめる。
     /// 刺さっていなければ少し先の天井へ撃ち、支点を越えて上がり始めたら離す、を繰り返す。
+    /// 移動だけを確かめるので、敵は毎回消す。
     #[test]
     fn simple_swinging_keeps_up_with_scroll() {
-        let mut game = Game::new();
+        let mut game = Game::with_seed(1);
         let mut held = false;
         for _ in 0..(60.0 / DT) as usize {
             let p = game.player.position;
@@ -166,6 +245,7 @@ mod tests {
                 _ => {}
             }
             held = input.held;
+            game.enemies.list.clear();
             game.step(input, DT);
             assert!(!game.over, "{:.0} m で終わった", game.distance());
         }
