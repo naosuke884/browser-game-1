@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>browser-game-1</title>
+    <link rel="icon" href="data:,">
+    <style>
+        html,
+        body,
+        canvas {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: absolute;
+            background: black;
+            z-index: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- id="glcanvas" は macroquad の JS ローダーが必須としている名前。
+         ローダーは window.onresize で clientWidth / clientHeight を読み、
+         描画バッファをブラウザの表示サイズに合わせる。 -->
+    <canvas id="glcanvas" tabindex="1" oncontextmenu="event.preventDefault()"></canvas>
+    <!-- wasm-bindgen ではなく macroquad 専用ローダー。
+         出典: macroquad 0.4.16 の js/mq_js_bundle.js
+         https://github.com/not-fl3/macroquad/blob/master/js/mq_js_bundle.js -->
+    <!-- バンドル末尾の quad_net が strict mode で未宣言の register_plugin へ代入する。
+         先にグローバルを置かないと、その代入が例外になりプラグイン登録が途中で止まる。 -->
+    <script>var register_plugin;</script>
+    <script src="mq_js_bundle.js"></script>
+    <script>
+        // 右クリックのブラウザメニューを出さない。
+        // preventDefault は contextmenu だけを止め、mousedown / mouseup はローダーへ届く。
+        document.addEventListener("contextmenu", function (event) {
+            event.preventDefault();
+        });
+        load("browser-game-1.wasm");
+    </script>
+</body>
+</html>
