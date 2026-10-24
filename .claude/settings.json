@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "naosuke884-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "naosuke884/plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "linear@naosuke884-plugins": true,
+    "rust-analyzer-lsp@claude-plugins-official": true
+  }
+}
