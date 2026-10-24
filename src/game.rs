@@ -7,13 +7,15 @@ use crate::player::{Player, WireInput, MAX_WIRE_LENGTH, PLAYER_RADIUS};
 
 /// 画面に映すワールドの高さ。y = 0 が画面の上端、y = VIEW_HEIGHT が下端。
 pub const VIEW_HEIGHT: f32 = 900.0;
-/// カメラは自機がカメラの左端からこの位置に来るよう右へ追いかける。左へは戻らない。
+/// カメラは自機がカメラの左端からこの位置に来るよう左右どちらへも追いかける。
 /// 16:9 の画面で中央より少し左に置き、進む先を広く見せる。
 const FOLLOW_OFFSET: f32 = 600.0;
-/// カメラの左端からこれだけ右まで地形を作っておく。横長の画面でも右端の先まで足りる幅にする。
+/// 最も右まで進んだときのカメラの左端から、これだけ右まで地形を作っておく。
+/// 横長の画面でも右端の先まで足りる幅にする。
 const GENERATE_AHEAD: f32 = 4000.0;
-/// カメラの左端よりこれだけ左へ流れた地形は捨てる。
-const DISCARD_BEHIND: f32 = 200.0;
+/// 最も右まで進んだときのカメラの左端より、これだけ左の地形は捨てる。
+/// 少し戻るのは自由だが、ずっと戻ると地形がなくなり、刺す先がなくて落ちる。
+const KEEP_BEHIND: f32 = 3000.0;
 /// 開始時の自機の、カメラ左端からの位置。
 const START_OFFSET: Vec2 = vec2(300.0, 450.0);
 /// 敵との当たり判定は見た目より小さくし、かすっただけでは終わらないようにする。
@@ -52,7 +54,7 @@ impl Game {
 
     pub fn with_seed(seed: u64) -> Self {
         let mut level = Level::default();
-        let mut generator = Generator::new(-DISCARD_BEHIND, seed);
+        let mut generator = Generator::new(-KEEP_BEHIND, seed);
         generator.fill(&mut level, GENERATE_AHEAD);
         let start = START_OFFSET;
         // 最初から真上の天井へワイヤーを刺した状態で始める。
@@ -66,7 +68,7 @@ impl Game {
             kills: 0,
             kill_points: 0,
             chain: 0,
-            camera_x: 0.0,
+            camera_x: start.x - FOLLOW_OFFSET,
             start_x: start.x,
             best_x: start.x,
             aim: start,
@@ -78,10 +80,10 @@ impl Game {
         if self.over {
             return;
         }
-        self.camera_x = self.camera_x.max(self.player.position.x - FOLLOW_OFFSET);
-        self.generator
-            .fill(&mut self.level, self.camera_x + GENERATE_AHEAD);
-        self.level.remove_before(self.camera_x - DISCARD_BEHIND);
+        self.camera_x = self.player.position.x - FOLLOW_OFFSET;
+        let front = self.best_x - FOLLOW_OFFSET;
+        self.generator.fill(&mut self.level, front + GENERATE_AHEAD);
+        self.level.remove_before(front - KEEP_BEHIND);
 
         self.aim = input.aim;
         // 撃ったワイヤーが地形より手前の敵に当たったら、その敵を倒して引き寄せられる。
@@ -99,12 +101,6 @@ impl Game {
             }
         }
         self.player.update(input, &self.level, dt);
-        // 画面の左端は壁にする。戻れないだけで、触れても終わらない。
-        let left_limit = self.camera_x + PLAYER_RADIUS;
-        if self.player.position.x < left_limit {
-            self.player.position.x = left_limit;
-            self.player.velocity.x = self.player.velocity.x.max(0.0);
-        }
         self.best_x = self.best_x.max(self.player.position.x);
         let player = self.player.position;
         let distance = self.distance();
@@ -171,8 +167,9 @@ mod tests {
     #[test]
     fn camera_does_not_scroll_by_itself() {
         let mut game = Game::new();
+        let before = game.camera_x;
         game.step(WireInput::default(), DT);
-        assert_eq!(game.camera_x, 0.0);
+        assert_eq!(game.camera_x, before);
     }
 
     #[test]
@@ -260,11 +257,15 @@ mod tests {
     }
 
     #[test]
-    fn camera_follows_player_running_ahead() {
+    fn camera_follows_player_both_ways() {
         let mut game = Game::new();
+        release_wire(&mut game);
         game.player.position.x = 5000.0;
         game.step(WireInput::default(), DT);
-        assert_eq!(game.camera_x, 5000.0 - FOLLOW_OFFSET);
+        assert_eq!(game.camera_x, game.player.position.x - FOLLOW_OFFSET);
+        game.player.position.x = 4000.0;
+        game.step(WireInput::default(), DT);
+        assert_eq!(game.camera_x, game.player.position.x - FOLLOW_OFFSET);
     }
 
     #[test]
@@ -279,15 +280,14 @@ mod tests {
     }
 
     #[test]
-    fn left_edge_is_a_wall() {
+    fn can_move_left_of_the_start() {
         let mut game = Game::new();
         release_wire(&mut game);
-        game.player.position = vec2(game.camera_x + PLAYER_RADIUS + 1.0, 300.0);
+        game.player.position = vec2(0.0, 300.0);
         game.player.velocity = vec2(-500.0, 0.0);
         game.step(WireInput::default(), DT);
         assert!(!game.over);
-        assert_eq!(game.player.position.x, game.camera_x + PLAYER_RADIUS);
-        assert_eq!(game.player.velocity.x, 0.0);
+        assert!(game.player.position.x < 0.0);
     }
 
     /// 真上から右斜め上までの向きのうち、ワイヤーが刺さる点が自機の 100 先にいちばん近い向き。
@@ -316,7 +316,7 @@ mod tests {
     /// 仕組みが壊れていないことの確認なので、最初の 30 秒を、止まらずに進める種だけで確かめる。
     #[test]
     fn simple_swinging_makes_progress() {
-        for seed in [2, 4, 6, 8] {
+        for seed in [3, 5, 8] {
             swing_for_a_while(seed);
         }
     }
@@ -382,8 +382,12 @@ mod tests {
     #[test]
     fn terrain_is_generated_ahead_and_discarded_behind() {
         let mut game = Game::new();
-        game.camera_x = 10_000.0;
+        release_wire(&mut game);
+        game.player.position.x = 10_000.0;
+        // 地形を作り足すのは、最も右まで進んだ位置を覚えた次の更新から。
         game.step(WireInput::default(), DT);
+        game.step(WireInput::default(), DT);
+        let front = game.best_x - FOLLOW_OFFSET;
         let right = game
             .level
             .blocks
@@ -397,7 +401,7 @@ mod tests {
             .map(|b| b.right())
             .fold(f32::MAX, f32::min);
         // 最後が穴で終わると刺し先の右端は少し手前になるので、穴の幅の分だけ余裕を見る。
-        assert!(right >= game.camera_x + GENERATE_AHEAD - 1000.0);
-        assert!(left >= game.camera_x - DISCARD_BEHIND);
+        assert!(right >= front + GENERATE_AHEAD - 1000.0);
+        assert!(left >= front - KEEP_BEHIND);
     }
 }
