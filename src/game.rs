@@ -20,6 +20,9 @@ const KEEP_BEHIND: f32 = 3000.0;
 const START_OFFSET: Vec2 = vec2(300.0, 450.0);
 /// 開始位置より左と、開始位置から右へこの幅までは平らな天井にし、毎回同じ形で始まるようにする。
 const START_FLAT_WIDTH: f32 = 1100.0;
+/// 敵を出すか。試遊でワイヤーの移動だけを確かめるため、いったん出さない。
+/// 倒す・連鎖・触れたら終わり、の仕組みは残してあり、true に戻せば元どおり出る。
+const SPAWN_ENEMIES: bool = false;
 /// 敵との当たり判定は見た目より小さくし、かすっただけでは終わらないようにする。
 const PLAYER_HURT_RADIUS: f32 = PLAYER_RADIUS * 0.7;
 /// 敵 1 体の基本の得点。連鎖の倍率を掛けて入る。
@@ -106,7 +109,9 @@ impl Game {
         self.best_x = self.best_x.max(self.player.position.x);
         let player = self.player.position;
         let distance = self.distance();
-        self.enemies.update(self.camera_x, player, distance, dt);
+        if SPAWN_ENEMIES {
+            self.enemies.update(self.camera_x, player, distance, dt);
+        }
 
         let fell = self.player.position.y - PLAYER_RADIUS > VIEW_HEIGHT;
         let hit = self.enemies.any_touching(player, PLAYER_HURT_RADIUS);
