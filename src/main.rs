@@ -40,7 +40,6 @@ async fn main() {
     let mut since_over = 0.0;
     // クリックとホイールは描画フレームで受け、次に回る固定刻みの更新で 1 回だけ使う。
     let mut wire_pressed = false;
-    let mut swing_pressed = false;
     let mut wheel = 0.0;
 
     loop {
@@ -48,7 +47,6 @@ async fn main() {
         let camera = view_camera(game.camera_x);
         let aim = camera.screen_to_world(mouse_position().into());
         wire_pressed |= is_mouse_button_pressed(MouseButton::Left);
-        swing_pressed |= is_mouse_button_pressed(MouseButton::Right);
         // ホイールを上へ回すと巻き取り、下へ回すと伸ばす。
         // 回した量は環境で桁が違うので、向きだけを 1 目盛りとして数える。
         let (_, wheel_y) = mouse_wheel();
@@ -63,7 +61,6 @@ async fn main() {
                 since_over = 0.0;
             }
             wire_pressed = false;
-            swing_pressed = false;
             wheel = 0.0;
         } else {
             accumulator += frame_time;
@@ -72,11 +69,9 @@ async fn main() {
                     aim,
                     pressed: wire_pressed,
                     wheel,
-                    swing_pressed,
                 };
                 game.step(input, FIXED_DT);
                 wire_pressed = false;
-                swing_pressed = false;
                 wheel = 0.0;
                 accumulator -= FIXED_DT;
             }
@@ -105,7 +100,7 @@ async fn main() {
             Color::from_rgba(180, 190, 205, 255),
         );
         draw_text(
-            "left click: shoot / pull back wire   wheel: reel in / out   right click: swing",
+            "left click: shoot / pull back wire   wheel: reel in / out",
             16.0,
             screen_height() - 16.0,
             22.0,

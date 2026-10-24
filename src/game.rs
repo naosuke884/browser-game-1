@@ -326,7 +326,7 @@ mod tests {
     /// 仕組みが壊れていないことの確認なので、最初の 30 秒を、止まらずに進める種だけで確かめる。
     #[test]
     fn simple_swinging_makes_progress() {
-        for seed in [1, 2, 3, 4, 6, 7, 8, 10] {
+        for seed in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] {
             swing_for_a_while(seed);
         }
     }
@@ -343,36 +343,23 @@ mod tests {
                         && best_aim(&game).is_some()
                 }
                 // 支点より十分右で上がっている途中に、ワイヤーを戻して飛ぶ。
+                // 真下でほとんど止まっている（開始時など）ときも、一度戻して落ちながら先へ撃ち直す。
                 Some(a) => {
-                    p.x > a.point.x + a.length * 0.3
+                    let rising_ahead = p.x > a.point.x + a.length * 0.3
                         && game.player.velocity.x > 0.0
-                        && game.player.velocity.y < 0.0
+                        && game.player.velocity.y < 0.0;
+                    rising_ahead || game.player.velocity.length() < 30.0
                 }
             };
-            // 刺さっている間は長さ 150 まで巻き取る。動いている向きへ、待ち時間が明けるたびに一押しする。
+            // 刺さっている間は長さ 150 まで巻き取る。
             let wheel = match game.player.anchor {
                 Some(a) if a.target_length > 150.0 => -1.0,
                 _ => 0.0,
-            };
-            let side = if game.player.velocity.x < 0.0 {
-                -1.0
-            } else {
-                1.0
             };
             let input = WireInput {
                 aim: best_aim(&game).unwrap_or(game.player.position),
                 pressed,
                 wheel,
-                swing_pressed: !pressed,
-            };
-            // 一押しの向きはカーソルの側で決まるので、揺らすときだけカーソルを動いている側へ置く。
-            let input = if input.swing_pressed {
-                WireInput {
-                    aim: game.player.position + vec2(side * 100.0, 0.0),
-                    ..input
-                }
-            } else {
-                input
             };
             game.enemies.list.clear();
             game.step(input, DT);

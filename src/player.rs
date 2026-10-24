@@ -27,10 +27,6 @@ const MAX_STRETCH: f32 = 1.4;
 const ROPE_POINTS: usize = 20;
 /// 外したワイヤーが手元へ戻るまでの時間。戻るまでは次を撃てない。
 const RETRACT_TIME: f32 = 0.15;
-/// 右クリックで振り子を一押ししたときに、振れる向きへ足す速さ。
-const SWING_IMPULSE: f32 = 300.0;
-/// 一押ししてから次に押せるまでの時間。連打で際限なく勢いが付かないようにする。
-const SWING_COOLDOWN: f32 = 0.4;
 
 /// ワイヤーの操作。
 #[derive(Clone, Copy, Default)]
@@ -41,8 +37,6 @@ pub struct WireInput {
     pub pressed: bool,
     /// マウスのホイールを回した目盛りの数。正で伸ばし、負で巻き取る。
     pub wheel: f32,
-    /// 右クリックを押した瞬間。振り子をカーソルの側へ一押しする。
-    pub swing_pressed: bool,
 }
 
 /// 刺さっているワイヤー。
@@ -60,8 +54,6 @@ pub struct Player {
     pub anchor: Option<Anchor>,
     /// 手元へ戻っている途中のワイヤーの、戻り始めた位置と残り時間。
     retract: Option<(Vec2, f32)>,
-    /// 次に振り子を一押しできるまでの時間。
-    swing_cooldown: f32,
     /// 描画用のワイヤーの節。支点から自機まで並ぶ。見た目だけで、動きには影響しない。
     rope: Vec<Vec2>,
     rope_prev: Vec<Vec2>,
@@ -74,7 +66,6 @@ impl Player {
             velocity: Vec2::ZERO,
             anchor: None,
             retract: None,
-            swing_cooldown: 0.0,
             rope: Vec::new(),
             rope_prev: Vec::new(),
         }
@@ -102,16 +93,9 @@ impl Player {
             }
         }
 
-        self.swing_cooldown = (self.swing_cooldown - dt).max(0.0);
         if let Some(anchor) = &mut self.anchor {
             anchor.target_length = (anchor.target_length + input.wheel * WHEEL_STEP)
                 .clamp(MIN_WIRE_LENGTH, MAX_WIRE_LENGTH);
-        }
-        if input.swing_pressed && self.swing_cooldown <= 0.0 {
-            if let Some(tangent) = self.swing_direction(input.aim) {
-                self.velocity += tangent * SWING_IMPULSE;
-                self.swing_cooldown = SWING_COOLDOWN;
-            }
         }
 
         self.velocity.y += GRAVITY * dt;
@@ -223,22 +207,6 @@ impl Player {
         }
         self.rope[0] = anchor.point;
         self.rope[last] = self.position;
-    }
-
-    /// 振り子を一押しする向き。ワイヤーに垂直な向きのうち、カーソルのある側（左右）。
-    /// ワイヤーが刺さっていないときは押せない。
-    fn swing_direction(&self, aim: Vec2) -> Option<Vec2> {
-        let anchor = self.anchor?;
-        let tangent = (self.position - anchor.point).normalize_or_zero().perp();
-        let side = (aim.x - self.position.x).signum();
-        if tangent == Vec2::ZERO || side == 0.0 {
-            return None;
-        }
-        Some(if tangent.x * side < 0.0 {
-            -tangent
-        } else {
-            tangent
-        })
     }
 
     pub fn shoot_wire(&mut self, aim: Vec2, level: &Level) {
@@ -450,7 +418,6 @@ mod tests {
             velocity: player.velocity,
             anchor: player.anchor,
             retract: None,
-            swing_cooldown: 0.0,
             rope: Vec::new(),
             rope_prev: Vec::new(),
         };
@@ -575,34 +542,5 @@ mod tests {
         assert!(player.can_shoot());
         player.update(press(player.position + vec2(0.0, -1.0)), &level, DT);
         assert!(player.anchor.is_some());
-    }
-
-    #[test]
-    fn right_click_pushes_pendulum_toward_cursor_side() {
-        let level = ceiling();
-        let swing = |aim: Vec2| WireInput {
-            aim,
-            swing_pressed: true,
-            ..idle()
-        };
-        // 支点の真下で止まっている状態から、カーソルのある右へ一押しする。
-        let mut player = Player::new(vec2(0.0, 300.0));
-        player.update(press(vec2(0.0, 0.0)), &level, DT);
-        player.update(swing(vec2(500.0, 300.0)), &level, DT);
-        assert!(player.velocity.x > SWING_IMPULSE * 0.9);
-        // 待ち時間の間は押せない。
-        let vx = player.velocity.x;
-        player.update(swing(vec2(500.0, 300.0)), &level, DT);
-        assert!(player.velocity.x <= vx + 1.0);
-
-        let mut player = Player::new(vec2(0.0, 300.0));
-        player.update(press(vec2(0.0, 0.0)), &level, DT);
-        player.update(swing(vec2(-500.0, 300.0)), &level, DT);
-        assert!(player.velocity.x < -SWING_IMPULSE * 0.9);
-
-        // ワイヤーが刺さっていなければ押せない。
-        let mut player = Player::new(vec2(0.0, 300.0));
-        player.update(swing(vec2(500.0, 300.0)), &level, DT);
-        assert_eq!(player.velocity.x, 0.0);
     }
 }
