@@ -29,6 +29,12 @@ const SPAWN_ENEMIES: bool = false;
 const PLAYER_HURT_RADIUS: f32 = PLAYER_RADIUS * 0.7;
 /// 敵 1 体の基本の得点。連鎖の倍率を掛けて入る。
 const KILL_POINTS: u32 = 100;
+/// 左から迫ってくる、触れたら終わる領域。開始時は自機のこれだけ左から始まる。
+const HAZARD_START_GAP: f32 = 900.0;
+/// 迫ってくる速さ。最初はゆっくりで、時間とともに上限まで速くなる。
+const HAZARD_START_SPEED: f32 = 120.0;
+const HAZARD_ACCELERATION: f32 = 3.0;
+const HAZARD_MAX_SPEED: f32 = 450.0;
 /// 画面の距離表示の単位。ワールドの 10 を 1 m と数える。
 const UNITS_PER_METER: f32 = 10.0;
 
@@ -50,6 +56,10 @@ pub struct Game {
     best_x: f32,
     /// 直前の更新で受けたカーソルの位置。照準の表示に使う。
     aim: Vec2,
+    /// 左から迫ってくる領域の右端のワールド x 座標。これより左に入ったら終わり。
+    pub hazard_x: f32,
+    /// 迫ってくる領域の今の速さ。
+    hazard_speed: f32,
     pub over: bool,
 }
 
@@ -79,6 +89,8 @@ impl Game {
             start_x: start.x,
             best_x: start.x,
             aim: start,
+            hazard_x: start.x - HAZARD_START_GAP,
+            hazard_speed: HAZARD_START_SPEED,
             over: false,
         }
     }
@@ -115,9 +127,13 @@ impl Game {
             self.enemies.update(self.camera_x, player, distance, dt);
         }
 
+        self.hazard_speed = (self.hazard_speed + HAZARD_ACCELERATION * dt).min(HAZARD_MAX_SPEED);
+        self.hazard_x += self.hazard_speed * dt;
+
         let fell = self.player.position.y - PLAYER_RADIUS > FALL_LIMIT_Y;
+        let caught = self.player.position.x - PLAYER_RADIUS < self.hazard_x;
         let hit = self.enemies.any_touching(player, PLAYER_HURT_RADIUS);
-        if fell || hit {
+        if fell || hit || caught {
             self.over = true;
         }
     }
@@ -145,6 +161,18 @@ impl Game {
     }
 
     pub fn draw(&self) {
+        // 左から迫ってくる領域。右端に明るい線を引いて、境目を分かりやすくする。
+        let hazard_color = Color::from_rgba(120, 40, 50, 160);
+        let hazard_left = self.hazard_x - 10_000.0;
+        draw_rectangle(hazard_left, -1000.0, 10_000.0, 4000.0, hazard_color);
+        draw_line(
+            self.hazard_x,
+            -1000.0,
+            self.hazard_x,
+            3000.0,
+            4.0,
+            Color::from_rgba(240, 90, 110, 255),
+        );
         // 落ちたら終わる高さに、横いっぱいの帯を引いて見せる。
         draw_rectangle(
             self.camera_x - 4000.0,
@@ -272,6 +300,26 @@ mod tests {
         let mut enemy = enemies.list.pop().unwrap();
         enemy.position = p;
         game.enemies.list.push(enemy);
+        game.step(WireInput::default(), DT);
+        assert!(game.over);
+    }
+
+    #[test]
+    fn hazard_creeps_in_from_the_left_and_speeds_up() {
+        let mut game = Game::with_seed(1);
+        let start = game.hazard_x;
+        game.step(WireInput::default(), 1.0);
+        let first = game.hazard_x - start;
+        assert!(first >= HAZARD_START_SPEED);
+        let before = game.hazard_x;
+        game.step(WireInput::default(), 1.0);
+        assert!(game.hazard_x - before > first);
+    }
+
+    #[test]
+    fn touching_the_hazard_ends_the_game() {
+        let mut game = Game::with_seed(1);
+        game.hazard_x = game.player.position.x;
         game.step(WireInput::default(), DT);
         assert!(game.over);
     }
