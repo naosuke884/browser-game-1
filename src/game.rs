@@ -102,7 +102,7 @@ impl Game {
         self.level.remove_before(front - KEEP_BEHIND);
 
         self.aim = input.aim;
-        // 撃ったワイヤーが地形より手前の敵に当たったら、その敵を倒して引き寄せられる。
+        // 撃ったワイヤーが地形より手前の敵に当たったら、その敵を倒し、引き寄せられながら上へ跳ねる。
         // 天井やブロックに刺すか、何もない所へ撃つと連鎖が切れる。ワイヤーを戻すだけなら切れない。
         if input.pressed && self.player.can_shoot() {
             if let Some((index, point)) = self.enemy_target(input.aim) {
@@ -223,6 +223,8 @@ mod tests {
         assert!(game.enemies.list.is_empty());
         assert!(game.player.anchor.is_none());
         assert!(game.player.velocity.x > 600.0);
+        // 横の敵を倒しても、上へ大きく跳ねる。
+        assert!(game.player.velocity.y < -600.0);
     }
 
     /// 自機の右 `dx` に浮遊する敵を 1 体置く。

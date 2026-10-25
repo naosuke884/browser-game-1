@@ -17,7 +17,9 @@ pub const BOOST_COOLDOWN: f32 = 1.2;
 /// これより遅いときは進む向きが定まらないので、ブーストは右（先へ進む向き）へ出す。
 const MIN_BOOST_DIRECTION_SPEED: f32 = 30.0;
 /// ワイヤーで敵を倒したとき、その場所へ引き寄せられる速さ。
-const PULL_SPEED: f32 = 700.0;
+const PULL_SPEED: f32 = 900.0;
+/// ワイヤーで敵を倒したとき、引き寄せに加えて上へ跳ねる速さ。敵を踏み台にして高く上がれる。
+const KILL_BOUNCE: f32 = 800.0;
 /// ワイヤーの伸びにくさ（ばね定数、自機の重さを 1 とした値）。
 /// 小さいほどよく伸びる。ぶら下がって止まっているとき、重力で GRAVITY / この値 だけ伸びる。
 const WIRE_STIFFNESS: f32 = 150.0;
@@ -238,12 +240,12 @@ impl Player {
         }
     }
 
-    /// ワイヤーで敵を倒したときに呼ぶ。ワイヤーは外れ、`point` へ向かう勢いが付く。
+    /// ワイヤーで敵を倒したときに呼ぶ。ワイヤーは外れ、`point` へ向かう勢いと、上へ跳ねる勢いが付く。
     pub fn pull_toward(&mut self, point: Vec2) {
         self.anchor = None;
         self.retract = None;
         let dir = (point - self.position).normalize_or_zero();
-        self.velocity = dir * PULL_SPEED;
+        self.velocity = dir * PULL_SPEED + vec2(0.0, -KILL_BOUNCE);
     }
 
     /// 今クリックしたらワイヤーが刺さる点。照準の表示に使う。
