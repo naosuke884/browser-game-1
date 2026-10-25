@@ -1,7 +1,9 @@
 use macroquad::prelude::*;
 use macroquad::rand::RandGenerator;
 
-pub const ENEMY_RADIUS: f32 = 18.0;
+/// 敵の大きさ。ワイヤーを当てる的と、触れたら終わる判定の両方に使う。
+/// 画面を引いて広く映しているので、狙いやすいよう大きめにする。
+pub const ENEMY_RADIUS: f32 = 32.0;
 /// 敵が左へ流れる速さ。
 const DRIFT_SPEED: f32 = 120.0;
 /// 上下に揺れる幅。
