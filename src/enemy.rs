@@ -10,14 +10,20 @@ const DRIFT_SPEED: f32 = 120.0;
 const SWAY: f32 = 60.0;
 /// 揺れの速さ（ラジアン毎秒）。
 const SWAY_RATE: f32 = 1.5;
-/// 敵を出す位置の、カメラ左端からの距離。16:9 の画面の右端より少し外。
+/// 敵は、最も右まで進んだときのカメラ左端からこれだけ先に出す。16:9 の画面の右端より少し外。
 const SPAWN_OFFSET: f32 = 3500.0;
 /// カメラ左端よりこれだけ左へ流れた敵は消す。
 const DISCARD_BEHIND: f32 = 200.0;
-/// この距離（m）を過ぎるまで敵を出さない。
-const START_DISTANCE: f32 = 100.0;
+/// 開始時のカメラ左端からこれだけ（100 m）進むまで敵を出さない。
+const START_GAP: f32 = 1000.0;
+/// 出す位置の間隔の範囲。最初は広く、進むほど狭める。
+/// 出る間隔は時間ではなく位置で決め、同じ種なら誰が遊んでも同じ所に同じ敵が出るようにする。
+const SPAWN_SPACING: (f32, f32) = (750.0, 250.0);
+/// 最初の敵からこれだけ先で、出す位置の間隔が最も狭くなる。
+const SPACING_RAMP: f32 = 15_000.0;
 
 /// 上下にゆっくり揺れながら、右から左へ流れてくる敵。
+#[derive(Debug, PartialEq)]
 pub struct Enemy {
     pub position: Vec2,
     /// 揺れの中心の高さ。
@@ -54,29 +60,31 @@ impl Enemy {
 /// 場の敵と、進んだ距離に応じて出現を増やす仕組み。
 pub struct Enemies {
     pub list: Vec<Enemy>,
-    until_spawn: f32,
+    /// 最初の敵を出す位置のワールド x 座標。
+    first_x: f32,
+    /// 次の敵を出す位置のワールド x 座標。
+    next_x: f32,
     rng: RandGenerator,
 }
 
 impl Enemies {
-    pub fn new(seed: u64) -> Self {
+    /// `start_front` は開始時のカメラ左端のワールド x 座標。
+    pub fn new(seed: u64, start_front: f32) -> Self {
         let rng = RandGenerator::new();
         rng.srand(seed);
+        let first_x = start_front + START_GAP + SPAWN_OFFSET;
         Self {
             list: Vec::new(),
-            until_spawn: 0.0,
+            first_x,
+            next_x: first_x,
             rng,
         }
     }
 
-    /// `distance` は進んだ距離（m）。
-    pub fn update(&mut self, camera_x: f32, distance: f32, dt: f32) {
-        if distance >= START_DISTANCE {
-            self.until_spawn -= dt;
-            if self.until_spawn <= 0.0 {
-                self.until_spawn = spawn_interval(distance);
-                self.spawn(camera_x);
-            }
+    /// `front` は最も右まで進んだときのカメラ左端、`camera_x` は今のカメラ左端のワールド x 座標。
+    pub fn update(&mut self, front: f32, camera_x: f32, dt: f32) {
+        while front + SPAWN_OFFSET >= self.next_x {
+            self.spawn();
         }
         for enemy in &mut self.list {
             enemy.update(dt);
@@ -85,11 +93,11 @@ impl Enemies {
             .retain(|e| e.position.x > camera_x - DISCARD_BEHIND);
     }
 
-    fn spawn(&mut self, camera_x: f32) {
+    fn spawn(&mut self) {
         let y = self.rng.gen_range(250.0, 900.0);
         let phase = self.rng.gen_range(0.0, std::f32::consts::TAU);
-        self.list
-            .push(Enemy::new(vec2(camera_x + SPAWN_OFFSET, y), phase));
+        self.list.push(Enemy::new(vec2(self.next_x, y), phase));
+        self.next_x += spawn_spacing(self.next_x - self.first_x);
     }
 
     /// `origin` から `dir` へ伸ばした線が最初に当たる敵の番号と、当たる点までの距離。
@@ -117,10 +125,10 @@ impl Enemies {
     }
 }
 
-/// 出現の間隔（秒）。100 m で 2.5 秒、1600 m で 0.8 秒まで縮める。
-fn spawn_interval(distance: f32) -> f32 {
-    let t = ((distance - START_DISTANCE) / 1500.0).clamp(0.0, 1.0);
-    2.5 + (0.8 - 2.5) * t
+/// 最初の敵から `past` だけ先で、次の敵までに空ける間隔。
+fn spawn_spacing(past: f32) -> f32 {
+    let t = (past / SPACING_RAMP).clamp(0.0, 1.0);
+    SPAWN_SPACING.0 + (SPAWN_SPACING.1 - SPAWN_SPACING.0) * t
 }
 
 /// 線と円が最初に交わる距離。始点が円の中なら 0。
@@ -152,25 +160,47 @@ mod tests {
     }
 
     #[test]
-    fn no_enemies_before_start_distance() {
-        let mut enemies = Enemies::new(1);
+    fn no_enemies_before_start_gap() {
+        let mut enemies = Enemies::new(1, 0.0);
         for _ in 0..1200 {
-            enemies.update(0.0, START_DISTANCE - 1.0, DT);
+            enemies.update(START_GAP - 1.0, 0.0, DT);
         }
         assert!(enemies.list.is_empty());
     }
 
     #[test]
-    fn spawns_ahead_after_start_distance() {
-        let mut enemies = Enemies::new(1);
-        enemies.update(1000.0, START_DISTANCE, DT);
+    fn spawns_ahead_after_start_gap() {
+        let mut enemies = Enemies::new(1, 0.0);
+        enemies.update(START_GAP, START_GAP, DT);
         assert_eq!(enemies.list.len(), 1);
-        assert!(enemies.list[0].position.x > 1000.0 + 3300.0);
+        assert!(enemies.list[0].position.x > START_GAP + 3300.0);
     }
 
     #[test]
-    fn spawning_gets_faster() {
-        assert!(spawn_interval(1000.0) < spawn_interval(START_DISTANCE));
+    fn spawning_gets_denser() {
+        assert!(spawn_spacing(10_000.0) < spawn_spacing(0.0));
+    }
+
+    /// 出る位置は進んだ位置だけで決まり、進み方や更新の刻みには依らない。
+    #[test]
+    fn same_seed_spawns_same_enemies_regardless_of_pace() {
+        let mut slow = Enemies::new(7, 0.0);
+        let mut x = 0.0;
+        while x < 20_000.0 {
+            x += 7.0;
+            slow.update(x, 0.0, 0.0);
+        }
+        let mut fast = Enemies::new(7, 0.0);
+        for x in [3000.0, 3001.0, 12_345.0, 20_000.0] {
+            fast.update(x, 0.0, 0.0);
+        }
+        slow.update(20_000.0, 0.0, 0.0);
+        assert!(slow.list.len() > 20);
+        assert_eq!(slow.list, fast.list);
+
+        let mut other = Enemies::new(8, 0.0);
+        other.update(20_000.0, 0.0, 0.0);
+        assert_ne!(slow.list, other.list);
     }
 
     #[test]
@@ -190,7 +220,7 @@ mod tests {
 
     #[test]
     fn raycast_hits_nearest_enemy() {
-        let mut enemies = Enemies::new(1);
+        let mut enemies = Enemies::new(1, 0.0);
         enemies.list.push(floater_at(vec2(300.0, 0.0)));
         enemies.list.push(floater_at(vec2(200.0, 0.0)));
         let (index, t) = enemies.raycast(Vec2::ZERO, vec2(1.0, 0.0), 600.0).unwrap();
@@ -204,7 +234,7 @@ mod tests {
 
     #[test]
     fn passed_enemies_are_discarded() {
-        let mut enemies = Enemies::new(1);
+        let mut enemies = Enemies::new(1, 0.0);
         enemies.list.push(floater_at(vec2(-500.0, 400.0)));
         enemies.update(0.0, 0.0, DT);
         assert!(enemies.list.is_empty());

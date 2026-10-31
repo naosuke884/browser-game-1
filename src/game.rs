@@ -62,8 +62,9 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Self {
-        // 毎回違う敵の出方にするため、起動時刻から種を作る。
-        Self::with_seed((macroquad::miniquad::date::now() * 1000.0) as u64)
+        // 同じ日は誰がいつ遊んでも同じコースになるよう、UTC の日付から種を作る。
+        // 日本時間では毎朝 9:00 に次のコースへ切り替わる。
+        Self::with_seed(today_seed(macroquad::miniquad::date::now()))
     }
 
     pub fn with_seed(seed: u64) -> Self {
@@ -78,7 +79,7 @@ impl Game {
             level,
             generator,
             player,
-            enemies: Enemies::new(seed),
+            enemies: Enemies::new(seed, start.x - FOLLOW_OFFSET),
             kills: 0,
             kill_points: 0,
             chain: 0,
@@ -119,8 +120,8 @@ impl Game {
         self.player.update(input, &self.level, dt);
         self.best_x = self.best_x.max(self.player.position.x);
         let player = self.player.position;
-        let distance = self.distance();
-        self.enemies.update(self.camera_x, distance, dt);
+        let front = self.best_x - FOLLOW_OFFSET;
+        self.enemies.update(front, self.camera_x, dt);
 
         self.hazard_speed = (self.hazard_speed + HAZARD_ACCELERATION * dt).min(HAZARD_MAX_SPEED);
         self.hazard_x += self.hazard_speed * dt;
@@ -198,6 +199,11 @@ impl Game {
     }
 }
 
+/// UNIX 時刻（秒）から、その UTC の日の種を作る。1970-01-01 からの日数。
+fn today_seed(unix_seconds: f64) -> u64 {
+    (unix_seconds / 86_400.0).floor() as u64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,8 +212,46 @@ mod tests {
     const DT: f32 = 1.0 / 120.0;
 
     #[test]
+    fn seed_changes_at_utc_midnight() {
+        // 2026-10-31 00:00 UTC（日本時間 9:00）。
+        let midnight = 1_793_404_800.0;
+        assert_eq!(today_seed(midnight), today_seed(midnight + 86_399.0));
+        assert_eq!(today_seed(midnight) + 1, today_seed(midnight + 86_400.0));
+        assert_ne!(today_seed(midnight - 1.0), today_seed(midnight));
+    }
+
+    /// 進み方が違っても、同じ種なら同じ地形になる。
+    #[test]
+    fn same_seed_gives_same_course_regardless_of_pace() {
+        let mut steady = Game::with_seed(42);
+        release_wire(&mut steady);
+        for i in 1..=40 {
+            move_to(&mut steady, i as f32 * 500.0, DT);
+        }
+        let mut jumpy = Game::with_seed(42);
+        release_wire(&mut jumpy);
+        for x in [3000.0, 15_000.0, 20_000.0] {
+            move_to(&mut jumpy, x, 1.0 / 30.0);
+        }
+        // 地形を作り足すのは、最も右まで進んだ位置を覚えた次の更新から。
+        move_to(&mut steady, 20_000.0, DT);
+        move_to(&mut jumpy, 20_000.0, DT);
+        assert_eq!(steady.level.blocks, jumpy.level.blocks);
+    }
+
+    /// 自機を `x` へ動かして 1 回更新する。終わらないよう、敵と迫る領域は取り除く。
+    fn move_to(game: &mut Game, x: f32, dt: f32) {
+        game.player.position = vec2(x, 300.0);
+        game.player.velocity = Vec2::ZERO;
+        game.enemies.list.clear();
+        game.hazard_x = f32::MIN;
+        game.step(WireInput::default(), dt);
+        assert!(!game.over);
+    }
+
+    #[test]
     fn camera_does_not_scroll_by_itself() {
-        let mut game = Game::new();
+        let mut game = Game::with_seed(1);
         let before = game.camera_x;
         game.step(WireInput::default(), DT);
         assert_eq!(game.camera_x, before);
@@ -315,7 +359,7 @@ mod tests {
 
     #[test]
     fn camera_follows_player_both_ways() {
-        let mut game = Game::new();
+        let mut game = Game::with_seed(1);
         release_wire(&mut game);
         game.player.position.x = 5000.0;
         game.step(WireInput::default(), DT);
@@ -327,7 +371,7 @@ mod tests {
 
     #[test]
     fn falling_off_the_bottom_ends_the_game() {
-        let mut game = Game::new();
+        let mut game = Game::with_seed(1);
         release_wire(&mut game);
         for _ in 0..600 {
             game.step(WireInput::default(), DT);
@@ -338,7 +382,7 @@ mod tests {
 
     #[test]
     fn can_move_left_of_the_start() {
-        let mut game = Game::new();
+        let mut game = Game::with_seed(1);
         release_wire(&mut game);
         game.player.position = vec2(0.0, 300.0);
         game.player.velocity = vec2(-500.0, 0.0);
@@ -418,7 +462,7 @@ mod tests {
 
     #[test]
     fn terrain_is_generated_ahead_and_discarded_behind() {
-        let mut game = Game::new();
+        let mut game = Game::with_seed(1);
         release_wire(&mut game);
         game.player.position.x = 10_000.0;
         // 地形を作り足すのは、最も右まで進んだ位置を覚えた次の更新から。
