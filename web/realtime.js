@@ -2,10 +2,10 @@
 // mq_js_bundle.js の後、load() の前に読み込む。
 // 繋がらないときは何もしない。ゲームは影なしで続く。
 (function () {
-    var API_ORIGIN = "https://roommate-api.884naoki-dev.workers.dev";
+    var API_ORIGIN = "https://api.roommate.hayashi-naoki.com";
     // API が受け付けるのは配信用ドメインからだけ。ほかで開いたとき（手元の確認など）は繋がない。
     // 繋がらないまま試し続けると、試すたびに匿名 ID が発行されてしまう。
-    var PLAY_ORIGIN = "https://roommate-play.884naoki-dev.workers.dev";
+    var PLAY_ORIGIN = "https://play.roommate.hayashi-naoki.com";
     var TOKEN_KEY = "roommate.player-token";
     // 届いたメッセージを wasm が取り出すまで溜める。タブが裏にある間に溜まりすぎないよう上限を置く。
     var MAX_QUEUE = 64;
