@@ -151,8 +151,14 @@ async fn main() {
         };
         draw_text(label, 16.0, 116.0, 22.0, color);
         if game.chain > 0 {
+            let multiplier = game.next_multiplier();
+            let max = if multiplier == game::MAX_MULTIPLIER {
+                " max"
+            } else {
+                ""
+            };
             draw_text(
-                format!("chain x{}", game.chain + 1),
+                format!("chain x{multiplier}{max}"),
                 16.0,
                 88.0,
                 28.0,

@@ -26,6 +26,9 @@ const START_FLAT_WIDTH: f32 = 1100.0;
 const PLAYER_HURT_RADIUS: f32 = PLAYER_RADIUS * 0.7;
 /// 敵 1 体の基本の得点。連鎖の倍率を掛けて入る。
 const KILL_POINTS: u32 = 100;
+/// 連鎖の倍率の上限。上限がないと連鎖を続けるほど点が伸び、サーバーの「1 秒あたりのスコアの上限」（500）で
+/// ありえない速さのスコアを見分けられなくなる。上限の倍率でも 1 体 500 点にとどめる。
+pub const MAX_MULTIPLIER: u32 = 5;
 /// 左から迫ってくる、触れたら終わる領域。開始時は自機のこれだけ左から始まる。
 const HAZARD_START_GAP: f32 = 900.0;
 /// 迫ってくる速さ。最初はゆっくりで、時間とともに上限まで速くなる。
@@ -120,8 +123,8 @@ impl Game {
             if let Some((index, point)) = self.enemy_target(input.aim) {
                 self.enemies.list.swap_remove(index);
                 self.kills += 1;
+                self.kill_points += KILL_POINTS * self.next_multiplier();
                 self.chain += 1;
-                self.kill_points += KILL_POINTS * self.chain;
                 self.player.pull_toward(point);
                 input.pressed = false;
             } else {
@@ -155,6 +158,11 @@ impl Game {
             .raycast(origin, dir, t)
             .is_some_and(|p| p.distance(origin) < t);
         (!blocked).then(|| (index, origin + dir * t))
+    }
+
+    /// 次に倒した敵に掛かる連鎖の倍率。
+    pub fn next_multiplier(&self) -> u32 {
+        (self.chain + 1).min(MAX_MULTIPLIER)
     }
 
     /// 得点。進んだ距離 1 m につき 1 点と、敵を倒した点の合計。
@@ -347,6 +355,22 @@ mod tests {
         shoot(&mut game, vec2(1.0, 0.0));
         assert_eq!(game.kill_points, KILL_POINTS * 4);
         assert_eq!(game.score(), game.distance() as u32 + KILL_POINTS * 4);
+    }
+
+    #[test]
+    fn chain_multiplier_stops_at_the_cap() {
+        let mut game = Game::with_seed(1);
+        release_wire(&mut game);
+        let kills = MAX_MULTIPLIER + 3;
+        for _ in 0..kills {
+            place_enemy(&mut game, 300.0);
+            shoot(&mut game, vec2(1.0, 0.0));
+        }
+        assert_eq!(game.chain, kills);
+        assert_eq!(game.next_multiplier(), MAX_MULTIPLIER);
+        // 1 + 2 + … + 5 倍と、上限に届いた後の 3 体ぶんの 5 倍。
+        let expected: u32 = (1..=MAX_MULTIPLIER).sum::<u32>() + MAX_MULTIPLIER * 3;
+        assert_eq!(game.kill_points, KILL_POINTS * expected);
     }
 
     #[test]
