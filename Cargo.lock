@@ -266,8 +266,8 @@ checksum = "5a651516ddc9168ebd67b24afd085a718be02f8858fe406591b013d101ce2f40"
 
 [[package]]
 name = "roommate-sdk"
-version = "0.2.0"
-source = "git+https://github.com/naosuke884/roommate?tag=roommate-sdk-v0.2.0#ee0b36a44e82cbbda4939fa0c70a271103c217ba"
+version = "0.3.0"
+source = "git+https://github.com/naosuke884/roommate?tag=roommate-sdk-v0.3.0#2820b1517f9a09062581bc657047c9d5593a4c0b"
 
 [[package]]
 name = "simd-adler32"
