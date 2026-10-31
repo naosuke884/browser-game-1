@@ -57,7 +57,7 @@ python3 -m http.server 8080 --directory web
 - `realtime.js` — 同じコースを同時に走っている人の影を出すため、roommate の API の部屋に WebSocket で繋ぐ
 - `browser-game-1.wasm` — `./scripts/build-wasm.sh` が生成する（gitignore 済み）
 
-main に push すると、CI が WASM をビルドし、R2 のバケット `roommate-games` の `browser-game-1/` に上書きで置きます。<https://play.roommate.hayashi-naoki.com/browser-game-1/> で遊べます。置く前に `scripts/stage-web.sh` が JS と wasm の参照に `?v=<commit>` を付け、更新後に古いファイルと新しいファイルが組み合わさらないようにします。戻すときは前のコミットに戻して push し直します。アップロードには GitHub の Environment `production` の Secret `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` を使います。
+main に push すると、CI が WASM をビルドし、R2 のバケット `roommate-games` の `grapnl/` に上書きで置きます。<https://play.roommate.hayashi-naoki.com/grapnl/> で遊べます。置く前に `scripts/stage-web.sh` が JS と wasm の参照に `?v=<commit>` を付け、更新後に古いファイルと新しいファイルが組み合わさらないようにします。戻すときは前のコミットに戻して push し直します。アップロードには GitHub の Environment `production` の Secret `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` を使います。
 
 ほかの場所に置くときは、ビルド後の `web/` ディレクトリをそのまま置きます。itch.io などに上げる場合もこの 5 ファイルです（影は roommate の配信用ドメインからしか繋がりません）。キャンバスは表示領域の 100% なので、ページや埋め込み枠のサイズ変更に追従します。
 

@@ -227,9 +227,9 @@ pub fn today_seed(unix_seconds: f64) -> u64 {
     (unix_seconds / 86_400.0).floor() as u64
 }
 
-/// 同じコースを走る人が集まる影の部屋の名前。ゲーム × 日付 × コース生成の版。
+/// 同じコースを走る人が集まる影の部屋の名前。slug × 日付 × コース生成の版。
 pub fn room_key(seed: u64) -> String {
-    format!("browser-game-1:{seed}:{COURSE_VERSION}")
+    format!("grapnl:{seed}:{COURSE_VERSION}")
 }
 
 #[cfg(test)]
@@ -238,6 +238,11 @@ mod tests {
     use crate::enemy::Enemy;
 
     const DT: f32 = 1.0 / 120.0;
+
+    #[test]
+    fn shadow_room_name_uses_the_slug() {
+        assert_eq!(room_key(20_000), format!("grapnl:20000:{COURSE_VERSION}"));
+    }
 
     #[test]
     fn seed_changes_at_utc_midnight() {

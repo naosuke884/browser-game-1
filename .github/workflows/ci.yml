@@ -49,7 +49,7 @@ jobs:
           path: dist/
           retention-days: 7
 
-  # main への push で、R2 の roommate-games/browser-game-1/ に上書きで置く。
+  # main への push で、R2 の roommate-games/grapnl/ に上書きで置く。
   # 配信は roommate の apps/play。戻すときは前のコミットに戻して push し直す。
   deploy:
     needs: check
