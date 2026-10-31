@@ -17,10 +17,10 @@
     var queue = [];
     var reconnectTimer = null;
 
-    // 匿名 ID のトークンは brand-sdk が受け持つ。brand-sdk.js をこれより前に読み込む。
+    // 匿名 ID のトークンは roommate-sdk が受け持つ。roommate-sdk.js をこれより前に読み込む。
     function getToken() {
         var client = window.roommate && window.roommate.client;
-        if (!client) return Promise.reject(new Error("brand-sdk が無い"));
+        if (!client) return Promise.reject(new Error("roommate-sdk が無い"));
         return client.token().then(function (token) {
             if (!token) throw new Error("トークンが取れない");
             return token;

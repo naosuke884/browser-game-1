@@ -53,7 +53,7 @@ python3 -m http.server 8080 --directory web
 
 - `index.html` — キャンバスをウィンドウいっぱいに広げ、右クリックメニューを出さない
 - `mq_js_bundle.js` — macroquad 0.4.16 同梱の専用ローダー（`wasm-bindgen` ではない）
-- `brand-sdk.js` — roommate の brand-sdk。匿名 ID・スコアの送信・自己ベストを受け持つ。`Cargo.toml` の `brand-sdk` と同じタグの `packages/brand-sdk/dist/brand-sdk.js` を置く
+- `roommate-sdk.js` — roommate-sdk。匿名 ID・スコアの送信・自己ベストを受け持つ。`Cargo.toml` の `roommate-sdk` と同じタグの `packages/roommate-sdk/dist/roommate-sdk.js` を置く
 - `realtime.js` — 同じコースを同時に走っている人の影を出すため、roommate の API の部屋に WebSocket で繋ぐ
 - `browser-game-1.wasm` — `./scripts/build-wasm.sh` が生成する（gitignore 済み）
 
