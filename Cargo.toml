@@ -7,8 +7,8 @@ description = "Browser 2D action game (Rust + macroquad)"
 
 [dependencies]
 macroquad = "0.4"
-# roommate の匿名 ID・スコア・自己ベスト。web/brand-sdk.js は同じタグのものを置く。
-brand-sdk = { git = "https://github.com/naosuke884/roommate", tag = "brand-sdk-v0.1.2" }
+# roommate の匿名 ID・スコア・自己ベスト。web/roommate-sdk.js は同じタグのものを置く。
+roommate-sdk = { git = "https://github.com/naosuke884/roommate", tag = "roommate-sdk-v0.2.0" }
 
 # 公開用 WASM は初回ロードを軽くするため、release はサイズ優先にする。
 # 開発中の `cargo run` は debug プロファイルなので、この設定の影響を受けない。

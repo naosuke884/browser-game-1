@@ -40,7 +40,7 @@ async fn main() {
     let mut shadows = Shadows::default();
     // 次に自機の状態を影の部屋へ送るまでの時間。
     let mut until_send = 0.0;
-    // 自己ベストは brand-sdk がサーバーと端末の大きいほうを返す。サーバーの分は後から届くので、毎フレーム読む。
+    // 自己ベストは roommate-sdk がサーバーと端末の大きいほうを返す。サーバーの分は後から届くので、毎フレーム読む。
     let mut high_score = 0;
     let mut accumulator = 0.0;
     // ゲームオーバーになってからの経過時間。
@@ -80,11 +80,11 @@ async fn main() {
                 accumulator -= FIXED_DT;
             }
             if game.over {
-                brand_sdk::submit_score(game.score(), (game.elapsed * 1000.0) as u32);
+                roommate_sdk::submit_score(game.score(), (game.elapsed * 1000.0) as u32);
             }
         }
 
-        high_score = high_score.max(brand_sdk::best_score().unwrap_or(0));
+        high_score = high_score.max(roommate_sdk::best_score().unwrap_or(0));
         let now = get_time();
         while let Some(message) = realtime::receive() {
             if let Some(incoming) = shadow::read_incoming(&message) {

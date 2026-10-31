@@ -35,8 +35,8 @@
     <script>var register_plugin;</script>
     <script src="mq_js_bundle.js"></script>
     <script>
-        // 前の版は自己ベストを browser-game-1.high-score に持っていた。brand-sdk の置き場所へ移す。
-        // brand-sdk はこれを読んで手元の自己ベストにするので、brand-sdk.js より前に置く。
+        // 前の版は自己ベストを browser-game-1.high-score に持っていた。roommate-sdk の置き場所へ移す。
+        // roommate-sdk はこれを読んで手元の自己ベストにするので、roommate-sdk.js より前に置く。
         try {
             var oldBest = Number(localStorage.getItem("browser-game-1.high-score"));
             var newBest = Number(localStorage.getItem("roommate.best.browser-game-1"));
@@ -48,8 +48,8 @@
             // localStorage が使えなくても遊べる。
         }
     </script>
-    <!-- 匿名 ID・スコア・自己ベスト（roommate の brand-sdk）。load() より前に読み込む。 -->
-    <script src="brand-sdk.js" data-game="browser-game-1"></script>
+    <!-- 匿名 ID・スコア・自己ベスト（roommate-sdk）。load() より前に読み込む。 -->
+    <script src="roommate-sdk.js" data-game="browser-game-1"></script>
     <!-- 同時に遊んでいる人の影。load() より前に読み込む。 -->
     <script src="realtime.js"></script>
     <script>

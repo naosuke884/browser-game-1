@@ -15,4 +15,4 @@ install -D -m 644 \
 
 echo "web/browser-game-1.wasm を更新しました。"
 echo "確認: python3 -m http.server 8080 --directory web"
-echo "配布: web/ をそのまま公開する（index.html, mq_js_bundle.js, brand-sdk.js, realtime.js, browser-game-1.wasm）。"
+echo "配布: web/ をそのまま公開する（index.html, mq_js_bundle.js, roommate-sdk.js, realtime.js, browser-game-1.wasm）。"

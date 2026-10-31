@@ -27,16 +27,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
-name = "brand-sdk"
-version = "0.1.2"
-source = "git+https://github.com/naosuke884/roommate?tag=brand-sdk-v0.1.2#39cfb7712f84f34c757f03f9b86c33610e48ee4e"
-
-[[package]]
 name = "browser-game-1"
 version = "0.1.0"
 dependencies = [
- "brand-sdk",
  "macroquad",
+ "roommate-sdk",
 ]
 
 [[package]]
@@ -268,6 +263,11 @@ name = "quad-rand"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a651516ddc9168ebd67b24afd085a718be02f8858fe406591b013d101ce2f40"
+
+[[package]]
+name = "roommate-sdk"
+version = "0.2.0"
+source = "git+https://github.com/naosuke884/roommate?tag=roommate-sdk-v0.2.0#ee0b36a44e82cbbda4939fa0c70a271103c217ba"
 
 [[package]]
 name = "simd-adler32"
