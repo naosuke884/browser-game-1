@@ -56,7 +56,9 @@ python3 -m http.server 8080 --directory web
 - `storage.js` — ハイスコアを localStorage に保存する関数を wasm に渡す
 - `browser-game-1.wasm` — `./scripts/build-wasm.sh` が生成する（gitignore 済み）
 
-公開するときは、ビルド後の `web/` ディレクトリをそのまま置きます。itch.io などに上げる場合もこの 4 ファイルです。キャンバスは表示領域の 100% なので、ページや埋め込み枠のサイズ変更に追従します。
+main に push すると、CI が WASM をビルドし、R2 のバケット `roommate-games` の `browser-game-1/` に上書きで置きます。<https://roommate-play.884naoki-dev.workers.dev/browser-game-1/> で遊べます。置く前に `scripts/stage-web.sh` が JS と wasm の参照に `?v=<commit>` を付け、更新後に古いファイルと新しいファイルが組み合わさらないようにします。戻すときは前のコミットに戻して push し直します。アップロードには GitHub の Environment `production` の Secret `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` を使います。
+
+ほかの場所に置くときは、ビルド後の `web/` ディレクトリをそのまま置きます。itch.io などに上げる場合もこの 4 ファイルです。キャンバスは表示領域の 100% なので、ページや埋め込み枠のサイズ変更に追従します。
 
 ## 方針
 

@@ -35,3 +35,49 @@ jobs:
 
       - name: Build WASM
         run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Upload web
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          install -m 644 target/wasm32-unknown-unknown/release/browser-game-1.wasm web/browser-game-1.wasm
+          scripts/stage-web.sh dist "$GITHUB_SHA"
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: web
+          path: dist/
+          retention-days: 7
+
+  # main への push で、R2 の roommate-games/browser-game-1/ に上書きで置く。
+  # 配信は roommate の apps/play。戻すときは前のコミットに戻して push し直す。
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    # 古い push のアップロードが新しい push の後に終わらないよう、順に 1 つずつ置く。
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: dist/
+
+      # R2 の S3 互換 API で置く。トークンはバケット roommate-games だけに書き込める R2 の API トークン。
+      - name: Upload to R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 は AWS CLI が既定で付けるチェックサムの一部に対応していないので、要るときだけにする。
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: scripts/upload-r2.sh dist
