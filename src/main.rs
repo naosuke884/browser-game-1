@@ -21,7 +21,8 @@ const RETRY_DELAY: f32 = 0.6;
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "browser-game-1".to_owned(),
+        // ブラウザのタブ（web/index.html の <title>）と同じ正式名。先頭も小文字。
+        window_title: "grapnl".to_owned(),
         window_width: 1280,
         window_height: 720,
         // ネイティブウィンドウのドラッグリサイズを受け付ける。
