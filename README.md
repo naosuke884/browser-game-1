@@ -1,6 +1,6 @@
-# browser-game-1
+# grapnl
 
-[![CI](https://github.com/naosuke884/browser-game-1/actions/workflows/ci.yml/badge.svg)](https://github.com/naosuke884/browser-game-1/actions/workflows/ci.yml)
+[![CI](https://github.com/naosuke884/grapnl/actions/workflows/ci.yml/badge.svg)](https://github.com/naosuke884/grapnl/actions/workflows/ci.yml)
 
 push と PR ごとに、書式・lint・テスト・WASM ビルドを GitHub Actions で確かめています（`.github/workflows/ci.yml`）。
 
