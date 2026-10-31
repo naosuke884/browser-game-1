@@ -6,7 +6,7 @@ use crate::level::Level;
 use crate::player::{Player, WireInput, MAX_WIRE_LENGTH, PLAYER_RADIUS};
 
 /// 自機がこの高さより下へ落ちたら終わり。天井の下 (y = 120 前後) からかなり下まで落ちられる。
-const FALL_LIMIT_Y: f32 = 1800.0;
+pub const FALL_LIMIT_Y: f32 = 1800.0;
 /// 画面に映すワールドの高さ。縦はカメラを動かさず、y = 0 から終わる高さの少し下までを一度に映す。
 pub const VIEW_HEIGHT: f32 = FALL_LIMIT_Y + 60.0;
 /// カメラは自機がカメラの左端からこの位置に来るよう左右どちらへも追いかける。
@@ -58,6 +58,7 @@ pub struct Game {
     /// 迫ってくる領域の今の速さ。
     hazard_speed: f32,
     pub over: bool,
+    seed: u64,
 }
 
 impl Game {
@@ -65,6 +66,11 @@ impl Game {
         // 同じ日は誰がいつ遊んでも同じコースになるよう、UTC の日付から種を作る。
         // 日本時間では毎朝 9:00 に次のコースへ切り替わる。
         Self::with_seed(today_seed(macroquad::miniquad::date::now()))
+    }
+
+    /// このコースの種。同じ日なら誰が遊んでも同じ。
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     pub fn with_seed(seed: u64) -> Self {
@@ -90,6 +96,7 @@ impl Game {
             hazard_x: start.x - HAZARD_START_GAP,
             hazard_speed: HAZARD_START_SPEED,
             over: false,
+            seed,
         }
     }
 
@@ -199,9 +206,18 @@ impl Game {
     }
 }
 
+/// コース生成の版。地形か敵の作り方を変えたら上げる。
+/// 影の部屋はこの版ごとに分かれるので、上げ忘れると影が違う地形の上を走る。
+pub const COURSE_VERSION: u32 = 1;
+
 /// UNIX 時刻（秒）から、その UTC の日の種を作る。1970-01-01 からの日数。
-fn today_seed(unix_seconds: f64) -> u64 {
+pub fn today_seed(unix_seconds: f64) -> u64 {
     (unix_seconds / 86_400.0).floor() as u64
+}
+
+/// 同じコースを走る人が集まる影の部屋の名前。ゲーム × 日付 × コース生成の版。
+pub fn room_key(seed: u64) -> String {
+    format!("browser-game-1:{seed}:{COURSE_VERSION}")
 }
 
 #[cfg(test)]

@@ -3,12 +3,15 @@ mod game;
 mod generator;
 mod level;
 mod player;
+mod realtime;
+mod shadow;
 mod storage;
 
 use macroquad::prelude::*;
 
 use game::{Game, VIEW_HEIGHT};
 use player::WireInput;
+use shadow::{Shadows, State};
 
 /// 更新は固定の刻みで回し、画面のリフレッシュレートで手触りが変わらないようにする。
 const FIXED_DT: f32 = 1.0 / 120.0;
@@ -34,6 +37,10 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut game = Game::new();
+    realtime::join(&game::room_key(game.seed()));
+    let mut shadows = Shadows::default();
+    // 次に自機の状態を影の部屋へ送るまでの時間。
+    let mut until_send = 0.0;
     let mut high_score = storage::load_high_score();
     let mut accumulator = 0.0;
     // ゲームオーバーになってからの経過時間。
@@ -52,6 +59,8 @@ async fn main() {
             since_over += frame_time;
             if since_over >= RETRY_DELAY && is_mouse_button_pressed(MouseButton::Left) {
                 game = Game::new();
+                // 日付が変わっていれば、新しいコースの部屋へ移る。
+                realtime::join(&game::room_key(game.seed()));
                 accumulator = 0.0;
                 since_over = 0.0;
             }
@@ -76,9 +85,28 @@ async fn main() {
             }
         }
 
+        let now = get_time();
+        while let Some(message) = realtime::receive() {
+            if let Some(incoming) = shadow::read_incoming(&message) {
+                shadows.receive(incoming, now);
+            }
+        }
+        shadows.forget_stale(now);
+        // 終わった後は送らない。届かなくなった影は、他の人の画面からしばらくして消える。
+        if !game.over {
+            until_send -= frame_time;
+            if until_send <= 0.0 {
+                until_send = shadow::SEND_INTERVAL;
+                let state = State::of(&game.player, (now * 1000.0) as u32);
+                realtime::send(&state.encode());
+            }
+        }
+
         clear_background(Color::from_rgba(16, 18, 24, 255));
 
         set_camera(&view_camera(game.camera_x));
+        // 影は判定に関わらないので、地形や自機より奥に描く。
+        shadows.draw(now);
         game.draw();
 
         set_default_camera();

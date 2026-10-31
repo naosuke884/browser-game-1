@@ -15,12 +15,12 @@ if [[ ! "$version" =~ ^[A-Za-z0-9]+$ ]]; then
 fi
 
 mkdir -p "$out"
-for file in index.html mq_js_bundle.js storage.js browser-game-1.wasm; do
+for file in index.html mq_js_bundle.js storage.js realtime.js browser-game-1.wasm; do
     install -m 644 "$root/web/$file" "$out/$file"
 done
 
 # 参照を書き換える。見つからなければ止める（index.html を変えたのに追従し忘れたとき）。
-for ref in 'src="mq_js_bundle.js"' 'src="storage.js"' 'load("browser-game-1.wasm")'; do
+for ref in 'src="mq_js_bundle.js"' 'src="storage.js"' 'src="realtime.js"' 'load("browser-game-1.wasm")'; do
     if ! grep -qF "$ref" "$out/index.html"; then
         echo "index.html に $ref が見つからない" >&2
         exit 1
@@ -29,5 +29,6 @@ done
 sed -i \
     -e "s|src=\"mq_js_bundle.js\"|src=\"mq_js_bundle.js?v=$version\"|" \
     -e "s|src=\"storage.js\"|src=\"storage.js?v=$version\"|" \
+    -e "s|src=\"realtime.js\"|src=\"realtime.js?v=$version\"|" \
     -e "s|load(\"browser-game-1.wasm\")|load(\"browser-game-1.wasm?v=$version\")|" \
     "$out/index.html"
