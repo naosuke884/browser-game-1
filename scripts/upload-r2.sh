@@ -14,7 +14,7 @@ put() {
 
 # 新しい index.html が、まだ置いていないファイルを読みに行かないよう、index.html は最後に置く。
 put mq_js_bundle.js "text/javascript; charset=utf-8"
-put storage.js "text/javascript; charset=utf-8"
+put brand-sdk.js "text/javascript; charset=utf-8"
 put realtime.js "text/javascript; charset=utf-8"
 put browser-game-1.wasm "application/wasm"
 put index.html "text/html; charset=utf-8"

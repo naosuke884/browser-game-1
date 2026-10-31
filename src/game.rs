@@ -59,6 +59,8 @@ pub struct Game {
     hazard_speed: f32,
     pub over: bool,
     seed: u64,
+    /// 始めてからの時間（秒）。スコアと一緒に送り、ありえない速さのスコアをサーバーが見分けるのに使う。
+    pub elapsed: f32,
 }
 
 impl Game {
@@ -97,6 +99,7 @@ impl Game {
             hazard_speed: HAZARD_START_SPEED,
             over: false,
             seed,
+            elapsed: 0.0,
         }
     }
 
@@ -104,6 +107,7 @@ impl Game {
         if self.over {
             return;
         }
+        self.elapsed += dt;
         self.camera_x = self.player.position.x - FOLLOW_OFFSET;
         let front = self.best_x - FOLLOW_OFFSET;
         self.generator.fill(&mut self.level, front + GENERATE_AHEAD);

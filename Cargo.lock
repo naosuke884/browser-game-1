@@ -27,9 +27,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "brand-sdk"
+version = "0.1.1"
+source = "git+https://github.com/naosuke884/roommate?tag=brand-sdk-v0.1.1#aa9c30efe36d7b747270b7c0feec85862a08e487"
+
+[[package]]
 name = "browser-game-1"
 version = "0.1.0"
 dependencies = [
+ "brand-sdk",
  "macroquad",
 ]
 

@@ -4,9 +4,7 @@
 (function () {
     var API_ORIGIN = "https://api.roommate.hayashi-naoki.com";
     // API が受け付けるのは配信用ドメインからだけ。ほかで開いたとき（手元の確認など）は繋がない。
-    // 繋がらないまま試し続けると、試すたびに匿名 ID が発行されてしまう。
     var PLAY_ORIGIN = "https://play.roommate.hayashi-naoki.com";
-    var TOKEN_KEY = "roommate.player-token";
     // 届いたメッセージを wasm が取り出すまで溜める。タブが裏にある間に溜まりすぎないよう上限を置く。
     var MAX_QUEUE = 64;
     // 繋がらないときは待ち時間を倍にしていく。繋がったら最初に戻す。
@@ -19,42 +17,14 @@
     var queue = [];
     var reconnectTimer = null;
 
-    // 仮の実装。HAY-112 の brand-sdk の getToken() に置き換える。
-    // 匿名 ID のトークンを localStorage に持ち、期限が 1 日を切ったら発行し直す。
+    // 匿名 ID のトークンは brand-sdk が受け持つ。brand-sdk.js をこれより前に読み込む。
     function getToken() {
-        var saved = null;
-        try {
-            saved = JSON.parse(window.localStorage.getItem(TOKEN_KEY));
-        } catch (e) {
-            saved = null;
-        }
-        var now = Date.now() / 1000;
-        if (saved && typeof saved.token === "string" && saved.expiresAt > now + 86400) {
-            return Promise.resolve(saved.token);
-        }
-        var renew = saved && typeof saved.token === "string" && saved.expiresAt > now;
-        var request = renew
-            ? fetch(API_ORIGIN + "/players/me/token", {
-                  method: "POST",
-                  headers: { Authorization: "Bearer " + saved.token },
-              })
-            : fetch(API_ORIGIN + "/players", { method: "POST" });
-        return request
-            .then(function (response) {
-                if (!response.ok) throw new Error("token: " + response.status);
-                return response.json();
-            })
-            .then(function (body) {
-                try {
-                    window.localStorage.setItem(
-                        TOKEN_KEY,
-                        JSON.stringify({ token: body.token, expiresAt: body.expiresAt })
-                    );
-                } catch (e) {
-                    // 保存できなくても、このページの間は使える。
-                }
-                return body.token;
-            });
+        var client = window.roommate && window.roommate.client;
+        if (!client) return Promise.reject(new Error("brand-sdk が無い"));
+        return client.token().then(function (token) {
+            if (!token) throw new Error("トークンが取れない");
+            return token;
+        });
     }
 
     function push(message) {
