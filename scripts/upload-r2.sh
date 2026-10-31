@@ -16,5 +16,5 @@ put() {
 put mq_js_bundle.js "text/javascript; charset=utf-8"
 put roommate-sdk.js "text/javascript; charset=utf-8"
 put realtime.js "text/javascript; charset=utf-8"
-put browser-game-1.wasm "application/wasm"
+put grapnl.wasm "application/wasm"
 put index.html "text/html; charset=utf-8"

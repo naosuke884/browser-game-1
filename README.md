@@ -55,7 +55,7 @@ python3 -m http.server 8080 --directory web
 - `mq_js_bundle.js` — macroquad 0.4.16 同梱の専用ローダー（`wasm-bindgen` ではない）
 - `roommate-sdk.js` — roommate-sdk。匿名 ID・スコアの送信・自己ベストを受け持つ。`Cargo.toml` の `roommate-sdk` と同じタグの `packages/roommate-sdk/dist/roommate-sdk.js` を置く
 - `realtime.js` — 同じコースを同時に走っている人の影を出すため、roommate の API の部屋に WebSocket で繋ぐ
-- `browser-game-1.wasm` — `./scripts/build-wasm.sh` が生成する（gitignore 済み）
+- `grapnl.wasm` — `./scripts/build-wasm.sh` が生成する（gitignore 済み）
 
 main に push すると、CI が WASM をビルドし、R2 のバケット `roommate-games` の `browser-game-1/` に上書きで置きます。<https://play.roommate.hayashi-naoki.com/browser-game-1/> で遊べます。置く前に `scripts/stage-web.sh` が JS と wasm の参照に `?v=<commit>` を付け、更新後に古いファイルと新しいファイルが組み合わさらないようにします。戻すときは前のコミットに戻して push し直します。アップロードには GitHub の Environment `production` の Secret `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` を使います。
 

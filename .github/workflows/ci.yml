@@ -39,7 +39,7 @@ jobs:
       - name: Upload web
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          install -m 644 target/wasm32-unknown-unknown/release/browser-game-1.wasm web/browser-game-1.wasm
+          install -m 644 target/wasm32-unknown-unknown/release/grapnl.wasm web/grapnl.wasm
           scripts/stage-web.sh dist "$GITHUB_SHA"
 
       - uses: actions/upload-artifact@v4

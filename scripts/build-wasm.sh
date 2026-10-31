@@ -10,9 +10,9 @@ rustup target add wasm32-unknown-unknown
 cargo build --release --target wasm32-unknown-unknown
 
 install -D -m 644 \
-    target/wasm32-unknown-unknown/release/browser-game-1.wasm \
-    web/browser-game-1.wasm
+    target/wasm32-unknown-unknown/release/grapnl.wasm \
+    web/grapnl.wasm
 
-echo "web/browser-game-1.wasm を更新しました。"
+echo "web/grapnl.wasm を更新しました。"
 echo "確認: python3 -m http.server 8080 --directory web"
-echo "配布: web/ をそのまま公開する（index.html, mq_js_bundle.js, roommate-sdk.js, realtime.js, browser-game-1.wasm）。"
+echo "配布: web/ をそのまま公開する（index.html, mq_js_bundle.js, roommate-sdk.js, realtime.js, grapnl.wasm）。"
